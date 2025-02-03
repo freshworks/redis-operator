@@ -2,7 +2,7 @@ apiVersion: databases.spotahome.com/v1
 kind: RedisFailover
 metadata:
   name: redisfailover
-  namespace: basic
+  namespace: disable-mymaster
 spec:
   sentinel:
     replicas: 3
@@ -11,6 +11,7 @@ spec:
         cpu: 100m
       limits:
         memory: 100Mi
+    disableMyMaster: true
   redis:
     replicas: 3
     resources:
