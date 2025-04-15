@@ -40,9 +40,15 @@ func New(cfg Config, k8sService k8s.Services, k8sClient kubernetes.Interface, lo
 	rfHandler := NewRedisFailoverHandler(cfg, rfService, rfChecker, rfHealer, k8sService, kooperMetricsRecorder, logger)
 	rfRetriever := NewRedisFailoverRetriever(cfg, k8sService)
 
-	kooperLogger := kooperlogger{Logger: logger.WithField("operator", "redisfailover")}
+	kooperLogger := kooperlogger{Logger: logger.WithField("operator", "redisfailover")
+        
+        lockCfg := &leaderelection.LockConfig{
+		LeaseDuration: 60 * time.Second,
+		RenewDeadline: 55 * time.Second,
+		RetryPeriod:   2 * time.Second,
+	}}
 	// Leader election service.
-	leSVC, err := leaderelection.NewDefault(lockKey, lockNamespace, k8sClient, kooperLogger)
+	leSVC, err := leaderelection.New(lockKey, lockNamespace, k8sClient, kooperLogger)
 	if err != nil {
 		return nil, err
 	}
