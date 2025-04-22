@@ -48,7 +48,7 @@ func New(cfg Config, k8sService k8s.Services, k8sClient kubernetes.Interface, lo
 		RetryPeriod:   2 * time.Second,
 	}
 	// Leader election service.
-	leSVC, err := leaderelection.New(lockKey, lockNamespace, k8sClient, kooperLogger)
+	leSVC, err := leaderelection.New(lockKey, lockNamespace, lockCfg, k8sClient, kooperLogger)
 	if err != nil {
 		return nil, err
 	}
