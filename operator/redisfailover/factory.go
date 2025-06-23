@@ -103,5 +103,5 @@ type kooperlogger struct {
 }
 
 func (k kooperlogger) WithKV(kv kooperlog.KV) kooperlog.Logger {
-	return kooperlogger{Logger: k.Logger.WithFields(kv)}
+	return kooperlogger{Logger: k.WithFields(kv)}
 }

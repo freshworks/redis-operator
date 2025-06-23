@@ -254,7 +254,7 @@ func generateRedisShutdownConfigMap(rf *redisfailoverv1.RedisFailover, labels ma
 	name := GetRedisShutdownConfigMapName(rf)
 	port := rf.Spec.Redis.Port
 	namespace := rf.Namespace
-	rfName := strings.Replace(strings.ToUpper(rf.Name), "-", "_", -1)
+	rfName := strings.ReplaceAll(strings.ToUpper(rf.Name), "-", "_")
 
 	labels = util.MergeLabels(labels, generateSelectorLabels(redisRoleName, rf.Name))
 	shutdownContent := fmt.Sprintf(`master=$(redis-cli -h ${RFS_%[1]v_SERVICE_HOST} -p ${RFS_%[1]v_SERVICE_PORT_SENTINEL} --csv SENTINEL get-master-addr-by-name %[3]v | tr ',' ' ' | tr -d '\"' |cut -d' ' -f1)
@@ -428,9 +428,9 @@ func generateRedisStatefulSet(rf *redisfailoverv1.RedisFailover, labels map[stri
 				Kind:       "PersistentVolumeClaim",
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				Name:              rf.Spec.Redis.Storage.PersistentVolumeClaim.EmbeddedObjectMetadata.Name,
-				Labels:            rf.Spec.Redis.Storage.PersistentVolumeClaim.EmbeddedObjectMetadata.Labels,
-				Annotations:       rf.Spec.Redis.Storage.PersistentVolumeClaim.EmbeddedObjectMetadata.Annotations,
+				Name:              rf.Spec.Redis.Storage.PersistentVolumeClaim.Name,
+				Labels:            rf.Spec.Redis.Storage.PersistentVolumeClaim.Labels,
+				Annotations:       rf.Spec.Redis.Storage.PersistentVolumeClaim.Annotations,
 				CreationTimestamp: metav1.Time{},
 			},
 			Spec:   rf.Spec.Redis.Storage.PersistentVolumeClaim.Spec,

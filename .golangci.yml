@@ -1,0 +1,52 @@
+run:
+  timeout: 15m
+  go: '1.24'
+  tests: true
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+        disabled: false
+        arguments:
+          - "checkPrivateReceivers"
+          - "disableStutteringCheck"
+
+issues:
+  exclude-use-default: true
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-dirs:
+    - mocks
+    - vendor
+    - client
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+    - path: api/redisfailover/v1/
+      linters:
+        - typecheck
+        - revive
+    - path: service/k8s/
+      linters:
+        - typecheck
+    - path: operator/redisfailover/factory.go
+      linters:
+        - typecheck

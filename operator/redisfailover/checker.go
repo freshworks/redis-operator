@@ -331,14 +331,14 @@ func getRedisPort(p int32) string {
 }
 
 func setRedisCheckerMetrics(metricsClient metrics.Recorder, mode /* redis or sentinel? */ string, rfNamespace string, rfName string, property string, IP string, err error) {
-	if mode == "sentinel" {
+	switch mode {
+	case "sentinel":
 		if err != nil {
 			metricsClient.RecordSentinelCheck(rfNamespace, rfName, property, IP, metrics.STATUS_UNHEALTHY)
 		} else {
 			metricsClient.RecordSentinelCheck(rfNamespace, rfName, property, IP, metrics.STATUS_HEALTHY)
 		}
-
-	} else if mode == "redis" {
+	default: // redis
 		if err != nil {
 			metricsClient.RecordRedisCheck(rfNamespace, rfName, property, IP, metrics.STATUS_UNHEALTHY)
 		} else {

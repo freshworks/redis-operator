@@ -48,6 +48,8 @@ UNIT_TEST_CMD := go test `go list ./... | grep -v /vendor/` -v
 GO_GENERATE_CMD := go generate `go list ./... | grep -v /vendor/`
 GO_INTEGRATION_TEST_CMD := go test `go list ./... | grep test/integration` -v -tags='integration'
 GET_DEPS_CMD := dep ensure
+LINT_CMD := golangci-lint run --timeout=15m
+LINT_NEW_CMD := golangci-lint run --timeout=15m --new-from-rev=HEAD~1
 UPDATE_DEPS_CMD := dep ensure
 MOCKS_CMD := go generate ./mocks
 
@@ -151,7 +153,23 @@ helm-test:
 
 # Run all tests
 .PHONY: test
-test: ci-unit-test ci-integration-test helm-test
+test: ci-lint ci-unit-test ci-integration-test helm-test
+
+.PHONY: lint
+lint: docker-build
+	docker run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(LINT_CMD)'
+
+.PHONY: new-lint
+new-lint: docker-build
+	docker run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(LINT_NEW_CMD)'
+
+.PHONY: ci-lint
+ci-lint:
+	$(LINT_CMD)
+
+.PHONY: ci-new-lint
+ci-new-lint:
+	$(LINT_NEW_CMD)
 
 .PHONY: go-generate
 go-generate: docker-build
