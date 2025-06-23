@@ -18,11 +18,10 @@ jobs:
               with:
                   go-version-file: go.mod
                   cache: false
-            - name: golangci-lint
-              uses: golangci/golangci-lint-action@v8
-              with:
-                  version: v2.1
-                  args: --timeout=15m
+            - name: Install golangci-lint
+              run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.57.0
+            - name: Run linter
+              run: make ci-lint
 
     unit-test:
         name: Unit test
