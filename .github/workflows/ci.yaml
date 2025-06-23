@@ -47,7 +47,7 @@ jobs:
                   go-version-file: go.mod
             - name: Install conntrack
               run: sudo apt-get install -y conntrack
-            - uses: medyagh/setup-minikube@v0.0.19
+            - uses: medyagh/setup-minikube@latest
               with:
                   kubernetes-version: ${{ matrix.kubernetes }}
                   minikube-version: v1.36.0
