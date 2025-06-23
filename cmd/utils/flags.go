@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/spotahome/redis-operator/operator/redisfailover"
+	"github.com/freshworks/redis-operator/operator/redisfailover"
 	"k8s.io/client-go/util/homedir"
 )
 

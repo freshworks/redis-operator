@@ -1,7 +1,7 @@
 # redis-operator
 
-[![Build Status](https://github.com/spotahome/redis-operator/actions/workflows/ci.yaml/badge.svg?branch=master)](https://github.com/spotahome/redis-operator)
-[![Go Report Card](https://goreportcard.com/badge/github.com/spotahome/redis-operator)](https://goreportcard.com/report/github.com/spotahome/redis-operator)
+[![Build Status](https://github.com/freshworks/redis-operator/actions/workflows/ci.yaml/badge.svg?branch=master)](https://github.com/freshworks/redis-operator)
+[![Go Report Card](https://goreportcard.com/badge/github.com/freshworks/redis-operator)](https://goreportcard.com/report/github.com/freshworks/redis-operator)
 
 Redis Operator creates/configures/manages redis-failovers atop Kubernetes.
 
@@ -60,7 +60,7 @@ but it also comes with a few presets (in the form of overlays) supporting the mo
 To install the operator with default settings and every necessary resource (including RBAC, service account, default resource limits, etc), install the `default` overlay:
 
 ```shell
-kustomize build github.com/spotahome/redis-operator/manifests/kustomize/overlays/default
+kustomize build github.com/freshworks/redis-operator/manifests/kustomize/overlays/default
 ```
 
 If you would like to customize RBAC or the service account used, you can install the `minimal` overlay.
@@ -70,7 +70,7 @@ Finally, you can install the `full` overlay if you want everything this operator
 It's always a good practice to pin the version of the operator in your configuration to make sure you are not surprised by changes on the latest development branch:
 
 ```shell
-kustomize build github.com/spotahome/redis-operator/manifests/kustomize/overlays/default?ref=v1.2.4
+kustomize build github.com/freshworks/redis-operator/manifests/kustomize/overlays/default?ref=v1.2.4
 ```
 
 You can easily create your own config by creating a `kustomization.yaml` file
@@ -86,7 +86,7 @@ commonLabels:
     foo: bar
 
 resources:
-  - github.com/spotahome/redis-operator/manifests/kustomize/overlays/full
+  - github.com/freshworks/redis-operator/manifests/kustomize/overlays/full
 ```
 
 Take a look at the manifests inside [manifests/kustomize](manifests/kustomize) for more details.
@@ -383,6 +383,6 @@ kubectl delete redisfailover <NAME>
 [![Redis Operator Image](https://quay.io/repository/spotahome/redis-operator/status "Redis Operator Image")](https://quay.io/repository/spotahome/redis-operator)
 ## Documentation
 
-For the code documentation, you can lookup on the [GoDoc](https://godoc.org/github.com/spotahome/redis-operator).
+For the code documentation, you can lookup on the [GoDoc](https://godoc.org/github.com/freshworks/redis-operator).
 
 Also, you can check more deeply information on the [docs folder](docs).

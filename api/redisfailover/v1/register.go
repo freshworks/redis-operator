@@ -1,7 +1,7 @@
 package v1
 
 import (
-	"github.com/spotahome/redis-operator/api/redisfailover"
+	"github.com/freshworks/redis-operator/api/redisfailover"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

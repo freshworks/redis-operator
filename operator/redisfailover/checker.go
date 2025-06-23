@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	redisfailoverv1 "github.com/spotahome/redis-operator/api/redisfailover/v1"
-	"github.com/spotahome/redis-operator/metrics"
+	redisfailoverv1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
+	"github.com/freshworks/redis-operator/metrics"
 )
 
 // UpdateRedisesPods if the running version of pods are equal to the statefulset one

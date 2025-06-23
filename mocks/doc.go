@@ -1,7 +1,7 @@
 /*
 Package mocks will have all the mocks of the application.
 */
-package mocks // import "github.com/spotahome/redis-operator/mocks"
+package mocks // import "github.com/freshworks/redis-operator/mocks"
 
 // Logger mocks
 //go:generate mockery --output log --dir ../log --name Logger

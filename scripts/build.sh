@@ -6,6 +6,11 @@ set -o nounset
 src=./cmd/redisoperator
 out=./bin/redis-operator
 
+# Set default values if not defined
+TARGETOS=${TARGETOS:-$(go env GOOS)}
+TARGETARCH=${TARGETARCH:-$(go env GOARCH)}
+binary_ext=""
+
 if [[ ! -z ${TARGETOS} ]] && [[ ! -z ${TARGETARCH} ]];
 then
     echo "Building ${TARGETOS}/${TARGETARCH} release..."

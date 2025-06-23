@@ -1,4 +1,4 @@
-FROM golang:1.20-alpine
+FROM golang:1.24-alpine
 
 ENV CODEGEN_VERSION="1.27.16"
 
@@ -29,4 +29,4 @@ RUN addgroup -g $gid rf && \
 
 
 USER rf
-WORKDIR /go/src/github.com/spotahome/redis-operator
+WORKDIR /go/src/github.com/freshworks/redis-operator

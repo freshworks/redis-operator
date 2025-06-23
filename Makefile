@@ -39,8 +39,8 @@ ifneq ($(shell git status --porcelain),)
 endif
 
 
-PROJECT_PACKAGE := github.com/spotahome/redis-operator
-CODEGEN_IMAGE := ghcr.io/slok/kube-code-generator:v1.27.0
+PROJECT_PACKAGE := github.com/freshworks/redis-operator
+CODEGEN_IMAGE := ghcr.io/slok/kube-code-generator:v0.7.0
 PORT := 9710
 
 # CMDs
@@ -56,7 +56,7 @@ DEV_DIR := docker/development
 APP_DIR := docker/app
 
 # workdir
-WORKDIR := /go/src/github.com/spotahome/redis-operator
+WORKDIR := /go/src/github.com/freshworks/redis-operator
 
 # The default action of this Makefile is to build the development docker image
 .PHONY: default
@@ -185,19 +185,19 @@ endif
 update-codegen:
 	@echo ">> Generating code for Kubernetes CRD types..."
 	docker run --rm -it \
-	-v $(PWD):/go/src/$(PROJECT_PACKAGE) \
-	-e PROJECT_PACKAGE=$(PROJECT_PACKAGE) \
-	-e CLIENT_GENERATOR_OUT=$(PROJECT_PACKAGE)/client/k8s \
-	-e APIS_ROOT=$(PROJECT_PACKAGE)/api \
+	-v $(PWD):/app \
+	-e KUBE_CODE_GENERATOR_GO_GEN_OUT=./client/k8s \
+	-e KUBE_CODE_GENERATOR_APIS_IN=./api \
 	-e GROUPS_VERSION="redisfailover:v1" \
 	-e GENERATION_TARGETS="deepcopy,client" \
 	$(CODEGEN_IMAGE)
 
 generate-crd:
-	docker run -it --rm \
-	-v $(PWD):/go/src/$(PROJECT_PACKAGE) \
-	-e GO_PROJECT_ROOT=/go/src/$(PROJECT_PACKAGE) \
-	-e CRD_TYPES_PATH=/go/src/$(PROJECT_PACKAGE)/api \
-	-e CRD_OUT_PATH=/go/src/$(PROJECT_PACKAGE)/manifests \
-	$(CODEGEN_IMAGE) update-crd.sh
+	@echo ">> Generating CRD..."
+	docker run --rm -it \
+	-v $(PWD):/app \
+	-e KUBE_CODE_GENERATOR_APIS_IN=./api \
+	-e KUBE_CODE_GENERATOR_CRD_GEN_OUT=./manifests \
+	-e GROUPS_VERSION="redisfailover:v1" \
+	$(CODEGEN_IMAGE)
 	cp -f manifests/databases.spotahome.com_redisfailovers.yaml manifests/kustomize/base

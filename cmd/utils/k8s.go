@@ -8,7 +8,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	redisfailoverclientset "github.com/spotahome/redis-operator/client/k8s/clientset/versioned"
+	redisfailoverclientset "github.com/freshworks/redis-operator/client/k8s/clientset/versioned"
 )
 
 // LoadKubernetesConfig loads kubernetes configuration based on flags.
