@@ -50,7 +50,7 @@ jobs:
             - uses: medyagh/setup-minikube@latest
               with:
                   kubernetes-version: ${{ matrix.kubernetes }}
-                  minikube-version: v1.36.0
+                  minikube-version: 1.36.0
                   driver: none
             - name: Add redisfailover CRD
               run: kubectl create -f manifests/databases.spotahome.com_redisfailovers.yaml
