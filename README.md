@@ -34,7 +34,7 @@ Helm chart only manage the creation of CRD in the first install. In order to upd
 
 ```
 REDIS_OPERATOR_VERSION=v1.3.0
-kubectl replace -f https://raw.githubusercontent.com/spotahome/redis-operator/${REDIS_OPERATOR_VERSION}/manifests/databases.spotahome.com_redisfailovers.yaml
+kubectl replace -f https://raw.githubusercontent.com/freshworks/redis-operator/${REDIS_OPERATOR_VERSION}/manifests/databases.spotahome.com_redisfailovers.yaml
 ```
 
 ```
@@ -46,8 +46,8 @@ To create the operator, you can directly create it with kubectl:
 
 ```
 REDIS_OPERATOR_VERSION=v1.3.0
-kubectl create -f https://raw.githubusercontent.com/spotahome/redis-operator/${REDIS_OPERATOR_VERSION}/manifests/databases.spotahome.com_redisfailovers.yaml
-kubectl apply -f https://raw.githubusercontent.com/spotahome/redis-operator/${REDIS_OPERATOR_VERSION}/example/operator/all-redis-operator-resources.yaml
+kubectl create -f https://raw.githubusercontent.com/freshworks/redis-operator/${REDIS_OPERATOR_VERSION}/manifests/databases.spotahome.com_redisfailovers.yaml
+kubectl apply -f https://raw.githubusercontent.com/freshworks/redis-operator/${REDIS_OPERATOR_VERSION}/example/operator/all-redis-operator-resources.yaml
 ```
 
 This will create a deployment named `redisoperator`.
@@ -191,7 +191,7 @@ In order to apply custom service Annotations, you can provide the `serviceAnnota
 
 By default the sentinel identifies the cluster with `mymaster`, due to the ephemeral nature of Kubernetes. There is a high likelihood of the colliding the sentinel across redisfailover deployments. To avoid this we can set the `disableMyMaster` to `false` under the `sentinel` specification.
 
-```
+```yaml
 apiVersion: databases.spotahome.com/v1
 kind: RedisFailover
 metadata:
@@ -380,7 +380,7 @@ kubectl delete redisfailover <NAME>
 
 ### Redis Operator
 
-[![Redis Operator Image](https://quay.io/repository/spotahome/redis-operator/status "Redis Operator Image")](https://quay.io/repository/spotahome/redis-operator)
+[![Redis Operator Image](https://ghcr.io/freshworks/redis-operator/status "Redis Operator Image")](https://ghcr.io/freshworks/redis-operator)
 ## Documentation
 
 For the code documentation, you can lookup on the [GoDoc](https://godoc.org/github.com/freshworks/redis-operator).
