@@ -1,13 +1,13 @@
-VERSION := v1.3.0-rc0
+VERSION ?= v1.3.0-rc0
 
 # Name of this service/application
 SERVICE_NAME := redis-operator
 
 # Docker image name for this project
-IMAGE_NAME := spotahome/$(SERVICE_NAME)
+IMAGE_NAME := freshworks/$(SERVICE_NAME)
 
 # Repository url for this project
-REPOSITORY := quay.io/$(IMAGE_NAME)
+REPOSITORY := ghcr.io/$(IMAGE_NAME)
 
 # Shell to use for running scripts
 SHELL := $(shell which bash)
