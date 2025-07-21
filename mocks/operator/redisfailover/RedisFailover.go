@@ -7,7 +7,7 @@ import (
 
 	mock "github.com/stretchr/testify/mock"
 
-	redisfailoverv1 "github.com/spotahome/redis-operator/api/redisfailover/v1"
+	redisfailoverv1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 

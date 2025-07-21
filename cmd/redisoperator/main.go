@@ -15,12 +15,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
 
-	"github.com/spotahome/redis-operator/cmd/utils"
-	"github.com/spotahome/redis-operator/log"
-	"github.com/spotahome/redis-operator/metrics"
-	"github.com/spotahome/redis-operator/operator/redisfailover"
-	"github.com/spotahome/redis-operator/service/k8s"
-	"github.com/spotahome/redis-operator/service/redis"
+	"github.com/freshworks/redis-operator/cmd/utils"
+	"github.com/freshworks/redis-operator/log"
+	"github.com/freshworks/redis-operator/metrics"
+	"github.com/freshworks/redis-operator/operator/redisfailover"
+	"github.com/freshworks/redis-operator/service/k8s"
+	"github.com/freshworks/redis-operator/service/redis"
 )
 
 const (

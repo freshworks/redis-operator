@@ -14,12 +14,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 
-	redisfailoverv1 "github.com/spotahome/redis-operator/api/redisfailover/v1"
-	"github.com/spotahome/redis-operator/log"
-	"github.com/spotahome/redis-operator/metrics"
-	rfservice "github.com/spotahome/redis-operator/operator/redisfailover/service"
-	"github.com/spotahome/redis-operator/service/k8s"
-	"github.com/spotahome/redis-operator/service/redis"
+	redisfailoverv1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
+	"github.com/freshworks/redis-operator/log"
+	"github.com/freshworks/redis-operator/metrics"
+	rfservice "github.com/freshworks/redis-operator/operator/redisfailover/service"
+	"github.com/freshworks/redis-operator/service/k8s"
+	"github.com/freshworks/redis-operator/service/redis"
 )
 
 const (
@@ -103,5 +103,5 @@ type kooperlogger struct {
 }
 
 func (k kooperlogger) WithKV(kv kooperlog.KV) kooperlog.Logger {
-	return kooperlogger{Logger: k.Logger.WithFields(kv)}
+	return kooperlogger{Logger: k.WithFields(kv)}
 }

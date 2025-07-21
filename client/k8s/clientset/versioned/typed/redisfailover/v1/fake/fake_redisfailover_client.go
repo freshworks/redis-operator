@@ -3,7 +3,7 @@
 package fake
 
 import (
-	v1 "github.com/spotahome/redis-operator/client/k8s/clientset/versioned/typed/redisfailover/v1"
+	v1 "github.com/freshworks/redis-operator/client/k8s/clientset/versioned/typed/redisfailover/v1"
 	rest "k8s.io/client-go/rest"
 	testing "k8s.io/client-go/testing"
 )
@@ -13,7 +13,7 @@ type FakeDatabasesV1 struct {
 }
 
 func (c *FakeDatabasesV1) RedisFailovers(namespace string) v1.RedisFailoverInterface {
-	return &FakeRedisFailovers{c, namespace}
+	return newFakeRedisFailovers(c, namespace)
 }
 
 // RESTClient returns a RESTClient that is used to communicate

@@ -18,11 +18,10 @@ jobs:
               with:
                   go-version-file: go.mod
                   cache: false
-            - name: golangci-lint
-              uses: golangci/golangci-lint-action@v6
-              with:
-                  version: v1.60
-                  args: --timeout=15m
+            - name: Install golangci-lint
+              run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.57.0
+            - name: Run linter
+              run: make ci-lint
 
     unit-test:
         name: Unit test
@@ -40,7 +39,7 @@ jobs:
         needs: [check, unit-test]
         strategy:
             matrix:
-                kubernetes: [1.27.3, 1.28.13, 1.29.8, 1.30.4, 1.31.0]
+                kubernetes: [1.27.3, 1.28.13, 1.29.8, 1.30.4, 1.31.0, 1.32.0, 1.33.0]
         steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-go@v5
@@ -48,10 +47,10 @@ jobs:
                   go-version-file: go.mod
             - name: Install conntrack
               run: sudo apt-get install -y conntrack
-            - uses: medyagh/setup-minikube@v0.0.18
+            - uses: medyagh/setup-minikube@latest
               with:
                   kubernetes-version: ${{ matrix.kubernetes }}
-                  minikube-version: 1.31.1
+                  minikube-version: 1.36.0
                   driver: none
             - name: Add redisfailover CRD
               run: kubectl create -f manifests/databases.spotahome.com_redisfailovers.yaml
@@ -61,14 +60,14 @@ jobs:
         name: Chart testing
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v3
+            - uses: actions/checkout@v4
               with:
                   fetch-depth: 0
 
             - name: Install Helm
-              uses: azure/setup-helm@v3
+              uses: azure/setup-helm@v4
               with:
-                  version: v3.7.2
+                  version: v3.12.3
 
             - name: Helm test
               run: make helm-test

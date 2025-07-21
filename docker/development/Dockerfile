@@ -1,4 +1,4 @@
-FROM golang:1.20-alpine
+FROM golang:1.24-alpine
 
 ENV CODEGEN_VERSION="1.27.16"
 
@@ -20,6 +20,10 @@ RUN wget http://github.com/kubernetes/code-generator/archive/kubernetes-${CODEGE
 ARG MOCKERY_VERSION="2.45.0"
 RUN wget -c https://github.com/vektra/mockery/releases/download/v${MOCKERY_VERSION}/mockery_${MOCKERY_VERSION}_$(uname -o)_$(uname -m).tar.gz -O - | tar -xz -C /go/bin/
 
+# Install golangci-lint
+ARG GOLANGCI_LINT_VERSION="1.57.0"
+RUN wget -O- -nv https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /go/bin v${GOLANGCI_LINT_VERSION}
+
 # Create user
 ARG uid=1000
 ARG gid=1000
@@ -29,4 +33,4 @@ RUN addgroup -g $gid rf && \
 
 
 USER rf
-WORKDIR /go/src/github.com/spotahome/redis-operator
+WORKDIR /go/src/github.com/freshworks/redis-operator

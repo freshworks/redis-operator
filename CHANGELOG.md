@@ -1,6 +1,6 @@
 # Changelog
 
-Check [releases](https://github.com/spotahome/redis-operator/releases) section for Changelog
+Check [releases](https://github.com/freshworks/redis-operator/releases) section for Changelog
 
 ## [v1.1.0-rc.3] - 2022-01-19
 ### Changes
@@ -340,33 +340,33 @@ example: `kubectl delete statefulset --cascade=false rfr-redisfailover`
 - Initial open-sourced release
 
 
-[v1.1.0-rc.1]: https://github.com/spotahome/redis-operator/compare/v1.0.0...v1.1.0-rc.1
-[v1.0.0]: https://github.com/spotahome/redis-operator/compare/0.5.8...v1.0.0
-[v1.0.0-rc.5]: https://github.com/spotahome/redis-operator/compare/v1.0.0-rc.4...v1.0.0-rc.5
-[v1.0.0-rc.4]: https://github.com/spotahome/redis-operator/compare/v1.0.0-rc.3...v1.0.0-rc.4
-[v1.0.0-rc.3]: https://github.com/spotahome/redis-operator/compare/v1.0.0-rc.2...v1.0.0-rc.3
-[v1.0.0-rc.2]: https://github.com/spotahome/redis-operator/compare/v1.0.0-rc.1...v1.0.0-rc.2
-[v1.0.0-rc.1]: https://github.com/spotahome/redis-operator/compare/0.5.8...v1.0.0-rc.1
-[0.5.8]: https://github.com/spotahome/redis-operator/compare/0.5.7...0.5.8
-[0.5.7]: https://github.com/spotahome/redis-operator/compare/0.5.6...0.5.7
-[0.5.6]: https://github.com/spotahome/redis-operator/compare/0.5.5...0.5.6
-[0.5.5]: https://github.com/spotahome/redis-operator/compare/0.5.4...0.5.5
-[0.5.4]: https://github.com/spotahome/redis-operator/compare/0.5.3...0.5.4
-[0.5.3]: https://github.com/spotahome/redis-operator/compare/0.5.2...0.5.3
-[0.5.2]: https://github.com/spotahome/redis-operator/compare/0.5.1...0.5.2
-[0.5.1]: https://github.com/spotahome/redis-operator/compare/0.5.0...0.5.1
-[0.5.0]: https://github.com/spotahome/redis-operator/compare/0.4.1...0.5.0
-[0.4.1]: https://github.com/spotahome/redis-operator/compare/0.4.0...0.4.1
-[0.4.0]: https://github.com/spotahome/redis-operator/compare/0.3.0...0.4.0
-[0.3.0]: https://github.com/spotahome/redis-operator/compare/0.2.5...0.3.0
-[0.2.5]: https://github.com/spotahome/redis-operator/compare/0.2.4...0.2.5
-[0.2.4]: https://github.com/spotahome/redis-operator/compare/0.2.3...0.2.4
-[0.2.3]: https://github.com/spotahome/redis-operator/compare/0.2.2...0.2.3
-[0.2.2]: https://github.com/spotahome/redis-operator/compare/0.2.1...0.2.2
-[0.2.1]: https://github.com/spotahome/redis-operator/compare/0.2.0...0.2.1
-[0.2.0]: https://github.com/spotahome/redis-operator/compare/0.1.6...0.2.0
-[0.1.6]: https://github.com/spotahome/redis-operator/compare/0.1.5...0.1.6
-[0.1.5]: https://github.com/spotahome/redis-operator/compare/0.1.4...0.1.5
-[0.1.4]: https://github.com/spotahome/redis-operator/compare/0.1.3...0.1.4
-[0.1.3]: https://github.com/spotahome/redis-operator/compare/0.1.2...0.1.3
-[0.1.2]: https://github.com/spotahome/redis-operator/compare/0.1.1...0.1.2
+[v1.1.0-rc.1]: https://github.com/freshworks/redis-operator/compare/v1.0.0...v1.1.0-rc.1
+[v1.0.0]: https://github.com/freshworks/redis-operator/compare/0.5.8...v1.0.0
+[v1.0.0-rc.5]: https://github.com/freshworks/redis-operator/compare/v1.0.0-rc.4...v1.0.0-rc.5
+[v1.0.0-rc.4]: https://github.com/freshworks/redis-operator/compare/v1.0.0-rc.3...v1.0.0-rc.4
+[v1.0.0-rc.3]: https://github.com/freshworks/redis-operator/compare/v1.0.0-rc.2...v1.0.0-rc.3
+[v1.0.0-rc.2]: https://github.com/freshworks/redis-operator/compare/v1.0.0-rc.1...v1.0.0-rc.2
+[v1.0.0-rc.1]: https://github.com/freshworks/redis-operator/compare/0.5.8...v1.0.0-rc.1
+[0.5.8]: https://github.com/freshworks/redis-operator/compare/0.5.7...0.5.8
+[0.5.7]: https://github.com/freshworks/redis-operator/compare/0.5.6...0.5.7
+[0.5.6]: https://github.com/freshworks/redis-operator/compare/0.5.5...0.5.6
+[0.5.5]: https://github.com/freshworks/redis-operator/compare/0.5.4...0.5.5
+[0.5.4]: https://github.com/freshworks/redis-operator/compare/0.5.3...0.5.4
+[0.5.3]: https://github.com/freshworks/redis-operator/compare/0.5.2...0.5.3
+[0.5.2]: https://github.com/freshworks/redis-operator/compare/0.5.1...0.5.2
+[0.5.1]: https://github.com/freshworks/redis-operator/compare/0.5.0...0.5.1
+[0.5.0]: https://github.com/freshworks/redis-operator/compare/0.4.1...0.5.0
+[0.4.1]: https://github.com/freshworks/redis-operator/compare/0.4.0...0.4.1
+[0.4.0]: https://github.com/freshworks/redis-operator/compare/0.3.0...0.4.0
+[0.3.0]: https://github.com/freshworks/redis-operator/compare/0.2.5...0.3.0
+[0.2.5]: https://github.com/freshworks/redis-operator/compare/0.2.4...0.2.5
+[0.2.4]: https://github.com/freshworks/redis-operator/compare/0.2.3...0.2.4
+[0.2.3]: https://github.com/freshworks/redis-operator/compare/0.2.2...0.2.3
+[0.2.2]: https://github.com/freshworks/redis-operator/compare/0.2.1...0.2.2
+[0.2.1]: https://github.com/freshworks/redis-operator/compare/0.2.0...0.2.1
+[0.2.0]: https://github.com/freshworks/redis-operator/compare/0.1.6...0.2.0
+[0.1.6]: https://github.com/freshworks/redis-operator/compare/0.1.5...0.1.6
+[0.1.5]: https://github.com/freshworks/redis-operator/compare/0.1.4...0.1.5
+[0.1.4]: https://github.com/freshworks/redis-operator/compare/0.1.3...0.1.4
+[0.1.3]: https://github.com/freshworks/redis-operator/compare/0.1.2...0.1.3
+[0.1.2]: https://github.com/freshworks/redis-operator/compare/0.1.1...0.1.2

@@ -9,7 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	koopercontroller "github.com/spotahome/kooper/v2/controller"
 	kooperprometheus "github.com/spotahome/kooper/v2/metrics/prometheus"
-	"github.com/spotahome/redis-operator/log"
+	"github.com/freshworks/redis-operator/log"
 )
 
 const (
