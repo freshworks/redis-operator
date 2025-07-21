@@ -175,6 +175,11 @@ func TestRedisFailover(t *testing.T) {
 	t.Run("Check Sentinels Checking the Redis Master", func(t *testing.T) {
 		clients.testSentinelMonitoring(t, currentNamespace, disableMyMaster)
 	})
+
+	// Check that skip reconcile annotation works as expected
+	t.Run("Check Skip Reconcile annotation", func(t *testing.T) {
+		clients.testSkipReconcile(t, currentNamespace)
+	})
 }
 
 func TestRedisFailoverMyMaster(t *testing.T) {
@@ -450,4 +455,59 @@ func (c *clients) testCustomConfig(t *testing.T, currentNamespace string) {
 
 	assert.Len(values, 2)
 	assert.Empty(values[1])
+}
+
+func (c *clients) testSkipReconcile(t *testing.T, currentNamespace string) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// Get the RF
+	rf, err := c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Get(context.Background(), name, metav1.GetOptions{})
+	require.NoError(err)
+
+	originalReplicas := rf.Spec.Redis.Replicas
+
+	// Add the skip-reconcile annotation
+	rf.Annotations = map[string]string{
+		"skip-reconcile": "true",
+	}
+	rf, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Update(context.Background(), rf, metav1.UpdateOptions{})
+	require.NoError(err)
+	assert.Equal("true", rf.Annotations["skip-reconcile"])
+
+	// Update the replicas
+	rf.Spec.Redis.Replicas = originalReplicas + 1
+	_, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Update(context.Background(), rf, metav1.UpdateOptions{})
+	require.NoError(err)
+
+	// Giving time to the operator to reconcile
+	time.Sleep(3 * time.Minute)
+
+	// Check the replicas are not updated
+	replicas, err := c.getRedisReplicas(name, currentNamespace)
+	require.NoError(err)
+	assert.Equal(originalReplicas, replicas)
+
+	// Remove the skip-reconcile annotation
+	rf, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Get(context.Background(), name, metav1.GetOptions{})
+	require.NoError(err)
+	rf.Annotations = map[string]string{}
+	_, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Update(context.Background(), rf, metav1.UpdateOptions{})
+	require.NoError(err)
+
+	// Giving time to the operator to create the resources
+	time.Sleep(3 * time.Minute)
+
+	// Check the replicas are updated
+	replicas, err = c.getRedisReplicas(name, currentNamespace)
+	require.NoError(err)
+	assert.Equal(originalReplicas+1, replicas)
+}
+
+func (c *clients) getRedisReplicas(name string, currentNamespace string) (int32, error) {
+	redisSS, err := c.k8sClient.AppsV1().StatefulSets(currentNamespace).Get(context.Background(), fmt.Sprintf("rfr-%s", name), metav1.GetOptions{})
+	if err != nil {
+		return 0, err
+	}
+	return *redisSS.Spec.Replicas, nil
 }
