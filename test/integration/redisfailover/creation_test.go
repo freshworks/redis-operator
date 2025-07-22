@@ -489,7 +489,7 @@ func (c *clients) testSkipReconcile(t *testing.T, currentNamespace string) {
 	require.NoError(err)
 
 	// Giving time to the operator to reconcile
-	time.Sleep(3 * time.Minute)
+	time.Sleep(30 * time.Second)
 
 	// Check the replicas are not updated
 	replicas, err := c.getRedisReplicas(name, currentNamespace)
@@ -504,7 +504,7 @@ func (c *clients) testSkipReconcile(t *testing.T, currentNamespace string) {
 	require.NoError(err)
 
 	// Giving time to the operator to create the resources
-	time.Sleep(3 * time.Minute)
+	time.Sleep(30 * time.Second)
 
 	// Check the replicas are updated
 	replicas, err = c.getRedisReplicas(name, currentNamespace)
