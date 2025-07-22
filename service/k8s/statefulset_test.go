@@ -17,9 +17,9 @@ import (
 	kubernetes "k8s.io/client-go/kubernetes/fake"
 	kubetesting "k8s.io/client-go/testing"
 
-	"github.com/spotahome/redis-operator/log"
-	"github.com/spotahome/redis-operator/metrics"
-	"github.com/spotahome/redis-operator/service/k8s"
+	"github.com/freshworks/redis-operator/log"
+	"github.com/freshworks/redis-operator/metrics"
+	"github.com/freshworks/redis-operator/service/k8s"
 )
 
 var (
@@ -133,7 +133,7 @@ func TestStatefulSetServiceGetCreateOrUpdate(t *testing.T) {
 					VolumeClaimTemplates: []v1.PersistentVolumeClaim{
 						{
 							Spec: v1.PersistentVolumeClaimSpec{
-								Resources: v1.ResourceRequirements{
+								Resources: v1.VolumeResourceRequirements{
 									Requests: v1.ResourceList{
 										v1.ResourceStorage: resource.MustParse("0.5Gi"),
 									},
@@ -152,7 +152,7 @@ func TestStatefulSetServiceGetCreateOrUpdate(t *testing.T) {
 					VolumeClaimTemplates: []v1.PersistentVolumeClaim{
 						{
 							Spec: v1.PersistentVolumeClaimSpec{
-								Resources: v1.ResourceRequirements{
+								Resources: v1.VolumeResourceRequirements{
 									Requests: v1.ResourceList{
 										v1.ResourceStorage: resource.MustParse("1Gi"),
 									},
@@ -174,7 +174,7 @@ func TestStatefulSetServiceGetCreateOrUpdate(t *testing.T) {
 						},
 						Spec: v1.PersistentVolumeClaimSpec{
 							VolumeName: "vol-1",
-							Resources: v1.ResourceRequirements{
+							Resources: v1.VolumeResourceRequirements{
 								Requests: v1.ResourceList{
 									v1.ResourceStorage: resource.MustParse("0.5Gi"),
 								},
@@ -185,7 +185,7 @@ func TestStatefulSetServiceGetCreateOrUpdate(t *testing.T) {
 					{
 						Spec: v1.PersistentVolumeClaimSpec{
 							VolumeName: "vol-2",
-							Resources: v1.ResourceRequirements{
+							Resources: v1.VolumeResourceRequirements{
 								Requests: v1.ResourceList{
 									v1.ResourceStorage: resource.MustParse("1Gi"),
 								},

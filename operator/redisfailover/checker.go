@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	redisfailoverv1 "github.com/spotahome/redis-operator/api/redisfailover/v1"
-	"github.com/spotahome/redis-operator/metrics"
+	redisfailoverv1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
+	"github.com/freshworks/redis-operator/metrics"
 )
 
 // UpdateRedisesPods if the running version of pods are equal to the statefulset one
@@ -331,14 +331,14 @@ func getRedisPort(p int32) string {
 }
 
 func setRedisCheckerMetrics(metricsClient metrics.Recorder, mode /* redis or sentinel? */ string, rfNamespace string, rfName string, property string, IP string, err error) {
-	if mode == "sentinel" {
+	switch mode {
+	case "sentinel":
 		if err != nil {
 			metricsClient.RecordSentinelCheck(rfNamespace, rfName, property, IP, metrics.STATUS_UNHEALTHY)
 		} else {
 			metricsClient.RecordSentinelCheck(rfNamespace, rfName, property, IP, metrics.STATUS_HEALTHY)
 		}
-
-	} else if mode == "redis" {
+	default: // redis
 		if err != nil {
 			metricsClient.RecordRedisCheck(rfNamespace, rfName, property, IP, metrics.STATUS_UNHEALTHY)
 		} else {

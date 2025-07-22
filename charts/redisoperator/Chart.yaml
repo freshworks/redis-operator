@@ -5,11 +5,11 @@ apiVersion: v1
 description: A Helm chart for the Spotahome Redis Operator
 name: redis-operator
 version: 3.3.0
-home: https://github.com/spotahome/redis-operator
+home: https://github.com/freshworks/redis-operator
 keywords:
   - "golang"
   - "operator"
   - "cluster"
 sources:
-  - https://github.com/spotahome/redis-operator
+  - https://github.com/freshworks/redis-operator
 kubeVersion: ">=1.21.0-0"

@@ -7,12 +7,12 @@ import (
 	"github.com/stretchr/testify/mock"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	redisfailoverv1 "github.com/spotahome/redis-operator/api/redisfailover/v1"
-	"github.com/spotahome/redis-operator/log"
-	"github.com/spotahome/redis-operator/metrics"
-	mRFService "github.com/spotahome/redis-operator/mocks/operator/redisfailover/service"
-	mK8SService "github.com/spotahome/redis-operator/mocks/service/k8s"
-	rfOperator "github.com/spotahome/redis-operator/operator/redisfailover"
+	redisfailoverv1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
+	"github.com/freshworks/redis-operator/log"
+	"github.com/freshworks/redis-operator/metrics"
+	mRFService "github.com/freshworks/redis-operator/mocks/operator/redisfailover/service"
+	mK8SService "github.com/freshworks/redis-operator/mocks/service/k8s"
+	rfOperator "github.com/freshworks/redis-operator/operator/redisfailover"
 )
 
 const (

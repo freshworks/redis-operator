@@ -12,11 +12,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	redisfailoverv1 "github.com/spotahome/redis-operator/api/redisfailover/v1"
-	"github.com/spotahome/redis-operator/log"
-	"github.com/spotahome/redis-operator/metrics"
-	mK8SService "github.com/spotahome/redis-operator/mocks/service/k8s"
-	rfservice "github.com/spotahome/redis-operator/operator/redisfailover/service"
+	redisfailoverv1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
+	"github.com/freshworks/redis-operator/log"
+	"github.com/freshworks/redis-operator/metrics"
+	mK8SService "github.com/freshworks/redis-operator/mocks/service/k8s"
+	rfservice "github.com/freshworks/redis-operator/operator/redisfailover/service"
 )
 
 func TestRedisStatefulSetStorageGeneration(t *testing.T) {
@@ -261,7 +261,7 @@ func TestRedisStatefulSetStorageGeneration(t *testing.T) {
 								AccessModes: []corev1.PersistentVolumeAccessMode{
 									"ReadWriteOnce",
 								},
-								Resources: corev1.ResourceRequirements{
+								Resources: corev1.VolumeResourceRequirements{
 									Requests: corev1.ResourceList{
 										corev1.ResourceStorage: resource.MustParse("1Gi"),
 									},
@@ -280,7 +280,7 @@ func TestRedisStatefulSetStorageGeneration(t *testing.T) {
 						AccessModes: []corev1.PersistentVolumeAccessMode{
 							"ReadWriteOnce",
 						},
-						Resources: corev1.ResourceRequirements{
+						Resources: corev1.VolumeResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceStorage: resource.MustParse("1Gi"),
 							},
@@ -376,7 +376,7 @@ func TestRedisStatefulSetStorageGeneration(t *testing.T) {
 								AccessModes: []corev1.PersistentVolumeAccessMode{
 									"ReadWriteOnce",
 								},
-								Resources: corev1.ResourceRequirements{
+								Resources: corev1.VolumeResourceRequirements{
 									Requests: corev1.ResourceList{
 										corev1.ResourceStorage: resource.MustParse("1Gi"),
 									},
@@ -395,7 +395,7 @@ func TestRedisStatefulSetStorageGeneration(t *testing.T) {
 						AccessModes: []corev1.PersistentVolumeAccessMode{
 							"ReadWriteOnce",
 						},
-						Resources: corev1.ResourceRequirements{
+						Resources: corev1.VolumeResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceStorage: resource.MustParse("1Gi"),
 							},
@@ -486,7 +486,7 @@ func TestRedisStatefulSetStorageGeneration(t *testing.T) {
 								AccessModes: []corev1.PersistentVolumeAccessMode{
 									"ReadWriteOnce",
 								},
-								Resources: corev1.ResourceRequirements{
+								Resources: corev1.VolumeResourceRequirements{
 									Requests: corev1.ResourceList{
 										corev1.ResourceStorage: resource.MustParse("1Gi"),
 									},
@@ -506,7 +506,7 @@ func TestRedisStatefulSetStorageGeneration(t *testing.T) {
 						AccessModes: []corev1.PersistentVolumeAccessMode{
 							"ReadWriteOnce",
 						},
-						Resources: corev1.ResourceRequirements{
+						Resources: corev1.VolumeResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceStorage: resource.MustParse("1Gi"),
 							},

@@ -1,13 +1,13 @@
-VERSION := v1.3.0-rc0
+VERSION ?= v1.3.0-rc0
 
 # Name of this service/application
 SERVICE_NAME := redis-operator
 
 # Docker image name for this project
-IMAGE_NAME := spotahome/$(SERVICE_NAME)
+IMAGE_NAME := freshworks/$(SERVICE_NAME)
 
 # Repository url for this project
-REPOSITORY := quay.io/$(IMAGE_NAME)
+REPOSITORY := ghcr.io/$(IMAGE_NAME)
 
 # Shell to use for running scripts
 SHELL := $(shell which bash)
@@ -39,8 +39,8 @@ ifneq ($(shell git status --porcelain),)
 endif
 
 
-PROJECT_PACKAGE := github.com/spotahome/redis-operator
-CODEGEN_IMAGE := ghcr.io/slok/kube-code-generator:v1.27.0
+PROJECT_PACKAGE := github.com/freshworks/redis-operator
+CODEGEN_IMAGE := ghcr.io/slok/kube-code-generator:v0.7.0
 PORT := 9710
 
 # CMDs
@@ -48,6 +48,8 @@ UNIT_TEST_CMD := go test `go list ./... | grep -v /vendor/` -v
 GO_GENERATE_CMD := go generate `go list ./... | grep -v /vendor/`
 GO_INTEGRATION_TEST_CMD := go test `go list ./... | grep test/integration` -v -tags='integration'
 GET_DEPS_CMD := dep ensure
+LINT_CMD := golangci-lint run --timeout=15m
+LINT_NEW_CMD := golangci-lint run --timeout=15m --new-from-rev=HEAD~1
 UPDATE_DEPS_CMD := dep ensure
 MOCKS_CMD := go generate ./mocks
 
@@ -56,7 +58,7 @@ DEV_DIR := docker/development
 APP_DIR := docker/app
 
 # workdir
-WORKDIR := /go/src/github.com/spotahome/redis-operator
+WORKDIR := /go/src/github.com/freshworks/redis-operator
 
 # The default action of this Makefile is to build the development docker image
 .PHONY: default
@@ -151,7 +153,23 @@ helm-test:
 
 # Run all tests
 .PHONY: test
-test: ci-unit-test ci-integration-test helm-test
+test: ci-lint ci-unit-test ci-integration-test helm-test
+
+.PHONY: lint
+lint: docker-build
+	docker run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(LINT_CMD)'
+
+.PHONY: new-lint
+new-lint: docker-build
+	docker run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(LINT_NEW_CMD)'
+
+.PHONY: ci-lint
+ci-lint:
+	$(LINT_CMD)
+
+.PHONY: ci-new-lint
+ci-new-lint:
+	$(LINT_NEW_CMD)
 
 .PHONY: go-generate
 go-generate: docker-build
@@ -185,19 +203,19 @@ endif
 update-codegen:
 	@echo ">> Generating code for Kubernetes CRD types..."
 	docker run --rm -it \
-	-v $(PWD):/go/src/$(PROJECT_PACKAGE) \
-	-e PROJECT_PACKAGE=$(PROJECT_PACKAGE) \
-	-e CLIENT_GENERATOR_OUT=$(PROJECT_PACKAGE)/client/k8s \
-	-e APIS_ROOT=$(PROJECT_PACKAGE)/api \
+	-v $(PWD):/app \
+	-e KUBE_CODE_GENERATOR_GO_GEN_OUT=./client/k8s \
+	-e KUBE_CODE_GENERATOR_APIS_IN=./api \
 	-e GROUPS_VERSION="redisfailover:v1" \
 	-e GENERATION_TARGETS="deepcopy,client" \
 	$(CODEGEN_IMAGE)
 
 generate-crd:
-	docker run -it --rm \
-	-v $(PWD):/go/src/$(PROJECT_PACKAGE) \
-	-e GO_PROJECT_ROOT=/go/src/$(PROJECT_PACKAGE) \
-	-e CRD_TYPES_PATH=/go/src/$(PROJECT_PACKAGE)/api \
-	-e CRD_OUT_PATH=/go/src/$(PROJECT_PACKAGE)/manifests \
-	$(CODEGEN_IMAGE) update-crd.sh
+	@echo ">> Generating CRD..."
+	docker run --rm -it \
+	-v $(PWD):/app \
+	-e KUBE_CODE_GENERATOR_APIS_IN=./api \
+	-e KUBE_CODE_GENERATOR_CRD_GEN_OUT=./manifests \
+	-e GROUPS_VERSION="redisfailover:v1" \
+	$(CODEGEN_IMAGE)
 	cp -f manifests/databases.spotahome.com_redisfailovers.yaml manifests/kustomize/base
