@@ -63,8 +63,12 @@ func (c *clients) prepareNS(currentNamespace string) error {
 }
 
 func (c *clients) cleanup(stopC chan struct{}, currentNamespace string) {
-	c.k8sClient.CoreV1().Namespaces().Delete(context.Background(), currentNamespace, metav1.DeleteOptions{})
+	// Signal the operator to stop
 	close(stopC)
+	// Give the operator time to shut down gracefully
+	time.Sleep(5 * time.Second)
+	// Delete the namespace
+	c.k8sClient.CoreV1().Namespaces().Delete(context.Background(), currentNamespace, metav1.DeleteOptions{})
 }
 
 func TestRedisFailover(t *testing.T) {
@@ -75,6 +79,7 @@ func TestRedisFailover(t *testing.T) {
 	// Create signal channels.
 	stopC := make(chan struct{})
 	errC := make(chan error)
+	ctx, cancel := context.WithCancel(context.Background())
 
 	flags := &utils.CMDFlags{
 		KubeConfig:  filepath.Join(homedir.HomeDir(), ".kube", "config"),
@@ -106,14 +111,15 @@ func TestRedisFailover(t *testing.T) {
 	time.Sleep(15 * time.Second)
 
 	// Create operator and run.
-	redisfailoverOperator, err := redisfailover.New(redisfailover.Config{}, k8sservice, k8sClient, namespace, redisClient, metrics.Dummy, log.Dummy)
+	redisfailoverOperator, err := redisfailover.New(redisfailover.Config{}, k8sservice, k8sClient, currentNamespace, redisClient, metrics.Dummy, log.Dummy)
 	require.NoError(err)
 
 	go func() {
-		errC <- redisfailoverOperator.Run(context.Background())
+		errC <- redisfailoverOperator.Run(ctx)
 	}()
 
 	// Prepare cleanup for when the test ends
+	defer cancel()
 	defer clients.cleanup(stopC, currentNamespace)
 
 	// Give time to the operator to start
@@ -123,13 +129,13 @@ func TestRedisFailover(t *testing.T) {
 	secret := &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      authSecretPath,
-			Namespace: namespace,
+			Namespace: currentNamespace,
 		},
 		Data: map[string][]byte{
 			"password": []byte(testPass),
 		},
 	}
-	_, err = k8sClient.CoreV1().Secrets(namespace).Create(context.Background(), secret, metav1.CreateOptions{})
+	_, err = k8sClient.CoreV1().Secrets(currentNamespace).Create(context.Background(), secret, metav1.CreateOptions{})
 	require.NoError(err)
 
 	// Check that if we create a RedisFailover, it is certainly created and we can get it
@@ -175,6 +181,11 @@ func TestRedisFailover(t *testing.T) {
 	t.Run("Check Sentinels Checking the Redis Master", func(t *testing.T) {
 		clients.testSentinelMonitoring(t, currentNamespace, disableMyMaster)
 	})
+
+	// Check that skip reconcile annotation works as expected
+	t.Run("Check Skip Reconcile annotation", func(t *testing.T) {
+		clients.testSkipReconcile(t, currentNamespace)
+	})
 }
 
 func TestRedisFailoverMyMaster(t *testing.T) {
@@ -185,6 +196,7 @@ func TestRedisFailoverMyMaster(t *testing.T) {
 	// Create signal channels.
 	stopC := make(chan struct{})
 	errC := make(chan error)
+	ctx, cancel := context.WithCancel(context.Background())
 
 	flags := &utils.CMDFlags{
 		KubeConfig:  filepath.Join(homedir.HomeDir(), ".kube", "config"),
@@ -220,10 +232,11 @@ func TestRedisFailoverMyMaster(t *testing.T) {
 	require.NoError(err)
 
 	go func() {
-		errC <- redisfailoverOperator.Run(context.Background())
+		errC <- redisfailoverOperator.Run(ctx)
 	}()
 
 	// Prepare cleanup for when the test ends
+	defer cancel()
 	defer clients.cleanup(stopC, currentNamespace)
 
 	// Give time to the operator to start
@@ -450,4 +463,59 @@ func (c *clients) testCustomConfig(t *testing.T, currentNamespace string) {
 
 	assert.Len(values, 2)
 	assert.Empty(values[1])
+}
+
+func (c *clients) testSkipReconcile(t *testing.T, currentNamespace string) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// Get the RF
+	rf, err := c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Get(context.Background(), name, metav1.GetOptions{})
+	require.NoError(err)
+
+	originalReplicas := rf.Spec.Redis.Replicas
+
+	// Add the skip-reconcile annotation
+	rf.Annotations = map[string]string{
+		"redis-failover.freshworks.com/skip-reconcile": "true",
+	}
+	rf, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Update(context.Background(), rf, metav1.UpdateOptions{})
+	require.NoError(err)
+	assert.Equal("true", rf.Annotations["redis-failover.freshworks.com/skip-reconcile"])
+
+	// Update the replicas
+	rf.Spec.Redis.Replicas = originalReplicas + 1
+	_, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Update(context.Background(), rf, metav1.UpdateOptions{})
+	require.NoError(err)
+
+	// Giving time to the operator to reconcile
+	time.Sleep(30 * time.Second)
+
+	// Check the replicas are not updated
+	replicas, err := c.getRedisReplicas(name, currentNamespace)
+	require.NoError(err)
+	assert.Equal(originalReplicas, replicas)
+
+	// Remove the skip-reconcile annotation
+	rf, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Get(context.Background(), name, metav1.GetOptions{})
+	require.NoError(err)
+	rf.Annotations = map[string]string{}
+	_, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Update(context.Background(), rf, metav1.UpdateOptions{})
+	require.NoError(err)
+
+	// Giving time to the operator to create the resources
+	time.Sleep(30 * time.Second)
+
+	// Check the replicas are updated
+	replicas, err = c.getRedisReplicas(name, currentNamespace)
+	require.NoError(err)
+	assert.Equal(originalReplicas+1, replicas)
+}
+
+func (c *clients) getRedisReplicas(name string, currentNamespace string) (int32, error) {
+	redisSS, err := c.k8sClient.AppsV1().StatefulSets(currentNamespace).Get(context.Background(), fmt.Sprintf("rfr-%s", name), metav1.GetOptions{})
+	if err != nil {
+		return 0, err
+	}
+	return *redisSS.Spec.Replicas, nil
 }
