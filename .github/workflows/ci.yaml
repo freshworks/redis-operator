@@ -61,7 +61,7 @@ jobs:
               if: steps.crd_changed.outputs.changed == 'true'
               run: |
                   # Get the latest tag (sorted by version, not creation date)
-                  previous_tag=$(git tag --sort=-version:refname | head -n 1)
+                  previous_tag=$(git tag --sort=-version:refname | grep "Chart" | head -n 1)
                   if [[ -z "$previous_tag" ]]; then
                       echo "::warning::No tags found, using master branch as reference"
                       previous_tag="origin/master"
