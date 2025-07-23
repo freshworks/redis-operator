@@ -60,9 +60,9 @@ func (r *RedisFailoverHandler) Handle(_ context.Context, obj runtime.Object) err
 	}
 
 	if rf.Annotations != nil {
-		skipReconcile, ok := rf.Annotations["skip-reconcile"]
+		skipReconcile, ok := rf.Annotations["redis-failover.freshworks.com/skip-reconcile"]
 		if ok && skipReconcile == "true" {
-			r.logger.Infoln("skip-reconcile set to true. Skipping reconcile for", rf.Name)
+			r.logger.Infoln("redis-failover.freshworks.com/skip-reconcile set to true. Skipping reconcile for", rf.Name)
 			return nil
 		}
 	}

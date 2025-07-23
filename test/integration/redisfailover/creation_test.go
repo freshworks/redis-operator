@@ -477,11 +477,11 @@ func (c *clients) testSkipReconcile(t *testing.T, currentNamespace string) {
 
 	// Add the skip-reconcile annotation
 	rf.Annotations = map[string]string{
-		"skip-reconcile": "true",
+		"redis-failover.freshworks.com/skip-reconcile": "true",
 	}
 	rf, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Update(context.Background(), rf, metav1.UpdateOptions{})
 	require.NoError(err)
-	assert.Equal("true", rf.Annotations["skip-reconcile"])
+	assert.Equal("true", rf.Annotations["redis-failover.freshworks.com/skip-reconcile"])
 
 	// Update the replicas
 	rf.Spec.Redis.Replicas = originalReplicas + 1

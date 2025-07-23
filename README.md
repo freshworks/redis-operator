@@ -145,7 +145,7 @@ In order to have the ability of this configurations to be changed "on the fly", 
 
 ### Skip Reconcile
 
-The operator provides a `skip-reconcile` annotation that allows you to temporarily pause reconciliation of a RedisFailover resource. When this annotation is set to `"true"`, the operator will skip all reconciliation logic for that specific RedisFailover, meaning any changes made to the resource specification will not be applied to the underlying Kubernetes resources.
+The operator provides a `redis-failover.freshworks.com/skip-reconcile` annotation that allows you to temporarily pause reconciliation of a RedisFailover resource. When this annotation is set to `"true"`, the operator will skip all reconciliation logic for that specific RedisFailover, meaning any changes made to the resource specification will not be applied to the underlying Kubernetes resources.
 
 This feature is useful for:
 - **Maintenance operations**: Temporarily prevent the operator from making changes while performing manual maintenance
@@ -154,9 +154,9 @@ This feature is useful for:
 
 #### Usage
 
-Add the `skip-reconcile: "true"` annotation to your RedisFailover resource to pause reconciliation. To resume, remove the annotation or set it to any other value.
+Add the `redis-failover.freshworks.com/skip-reconcile: "true"` annotation to your RedisFailover resource to pause reconciliation. To resume, remove the annotation or set it to any other value.
 
-**Important**: While `skip-reconcile` is active, the operator will not:
+**Important**: While `redis-failover.freshworks.com/skip-reconcile` is active, the operator will not:
 - Apply spec changes to StatefulSets, Deployments, ConfigMaps, or Services
 - Perform health checks or healing operations
 - Update resource configurations
