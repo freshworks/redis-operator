@@ -75,18 +75,18 @@ jobs:
               run: |
                   # Get old version from previous tag or master branch
                   if [[ "${{ steps.get_previous_tag.outputs.tag }}" == "origin/master" ]]; then
-                      old_version=$(git show origin/master:redis-operator/charts/redisoperator/Chart.yaml | grep '^version:' | awk '{print $2}')
+                      old_version=$(git show origin/master:charts/redisoperator/Chart.yaml | grep '^version:' | awk '{print $2}')
                   else
-                      old_version=$(git show ${{ steps.get_previous_tag.outputs.tag }}:redis-operator/charts/redisoperator/Chart.yaml | grep '^version:' | awk '{print $2}')
+                      old_version=$(git show ${{ steps.get_previous_tag.outputs.tag }}:charts/redisoperator/Chart.yaml | grep '^version:' | awk '{print $2}')
                   fi
                   
                   # Get new version from current PR branch
-                  if [[ ! -f "redis-operator/charts/redisoperator/Chart.yaml" ]]; then
-                      echo "::error::Chart.yaml file not found at redis-operator/charts/redisoperator/Chart.yaml"
+                  if [[ ! -f "charts/redisoperator/Chart.yaml" ]]; then
+                      echo "::error::Chart.yaml file not found at charts/redisoperator/Chart.yaml"
                       exit 1
                   fi
                   
-                  new_version=$(grep '^version:' redis-operator/charts/redisoperator/Chart.yaml | awk '{print $2}')
+                  new_version=$(grep '^version:' charts/redisoperator/Chart.yaml | awk '{print $2}')
                   
                   if [[ -z "$old_version" ]]; then
                       echo "::error::Could not determine old version"
@@ -115,7 +115,7 @@ jobs:
                   
                   if [[ "$old" == "$new" ]]; then
                       echo "::error::Chart version was not updated when CRD file changed. Found version: $new"
-                      echo "::error::Please increment the version in redis-operator/charts/redisoperator/Chart.yaml"
+                      echo "::error::Please increment the version in charts/redisoperator/Chart.yaml"
                       exit 1
                   fi
                   
