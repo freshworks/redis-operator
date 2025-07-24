@@ -51,10 +51,10 @@ jobs:
               run: |
                   git fetch origin master
                   if git diff --name-only origin/master...HEAD | grep -q "redisoperator/crds/databases.spotahome.com_redisfailovers.yaml"; then
-                      echo "CRD file changed"
+                      echo "CRD databases.spotahome.com_redisfailovers.yaml file changed"
                       echo "changed=true" >> $GITHUB_OUTPUT
                   else
-                      echo "CRD file not changed"
+                      echo "CRD databases.spotahome.com_redisfailovers.yaml file not changed"
                       echo "changed=false" >> $GITHUB_OUTPUT
                   fi
                   
@@ -100,8 +100,8 @@ jobs:
                       exit 1
                   fi
                   
-                  echo "Old version: $old_version"
-                  echo "New version: $new_version"
+                  echo "Helm Chart - Old version: $old_version"
+                  echo "Helm Chart - New version: $new_version"
                   echo "old=$old_version" >> $GITHUB_OUTPUT
                   echo "new=$new_version" >> $GITHUB_OUTPUT
                   
@@ -112,8 +112,8 @@ jobs:
                   new="${{ steps.get_versions.outputs.new }}"
                   
                   echo "🔍 Validating version bump:"
-                  echo "  Previous version: $old"
-                  echo "  Current version: $new"
+                  echo " Helm Chart - Previous version: $old"
+                  echo " Helm Chart - Current version: $new"
                   
                   if [[ "$old" == "$new" ]]; then
                       echo "::error::Chart version was not updated when CRD file changed. Found version: $new"
