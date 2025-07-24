@@ -23,6 +23,7 @@ type RedisFailover struct {
 // RedisFailoverSpec represents a Redis failover spec
 type RedisFailoverSpec struct {
 	Redis          RedisSettings      `json:"redis,omitempty"`
+	Kafka          []string           `json:"kafka,omitempty"`
 	Sentinel       SentinelSettings   `json:"sentinel,omitempty"`
 	Auth           AuthSettings       `json:"auth,omitempty"`
 	LabelWhitelist []string           `json:"labelWhitelist,omitempty"`
