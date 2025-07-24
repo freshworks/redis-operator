@@ -8,6 +8,8 @@ on:
     types: [opened, synchronize, reopened, edited]
     branches:
       - master
+    paths:
+      - '**/*.go'
 jobs:
     check:
         name: Golang Check
