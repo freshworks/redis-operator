@@ -104,31 +104,45 @@ func (r *RedisFailoverChecker) setSlaveLabelIfNecessary(namespace string, pod co
 }
 
 func (r *RedisFailoverChecker) setMasterAnnotationIfNecessary(namespace string, pod corev1.Pod, rf *redisfailoverv1.RedisFailover) error {
+	annotationKey := strings.ReplaceAll(clusterAutoscalerSafeToEvictAnnotationKey, "~1", "/")
+	currentValue, exists := pod.ObjectMeta.Annotations[annotationKey]
+
 	if !rf.Spec.Redis.PreventMasterEviction {
+		// Remove annotation when preventMasterEviction is disabled
+		if exists {
+			return r.k8sService.RemovePodAnnotation(namespace, pod.ObjectMeta.Name, annotationKey)
+		}
 		return nil
 	}
 
-	for annotationKey, annotationValue := range pod.ObjectMeta.Annotations {
-		if annotationKey == strings.ReplaceAll(clusterAutoscalerSafeToEvictAnnotationKey, "~1", "/") &&
-			annotationValue == clusterAutoscalerSafeToEvictAnnotationMaster {
-			return nil
-		}
+	// Add annotation when preventMasterEviction is enabled
+	expectedValue := clusterAutoscalerSafeToEvictAnnotationMaster
+	if !exists || currentValue != expectedValue {
+		return r.k8sService.UpdatePodAnnotations(namespace, pod.ObjectMeta.Name, generateRedisMasterAnnotations())
 	}
-	return r.k8sService.UpdatePodAnnotations(namespace, pod.ObjectMeta.Name, generateRedisMasterAnnotations())
+
+	return nil
 }
 
 func (r *RedisFailoverChecker) setSlaveAnnotationIfNecessary(namespace string, pod corev1.Pod, rf *redisfailoverv1.RedisFailover) error {
+	annotationKey := strings.ReplaceAll(clusterAutoscalerSafeToEvictAnnotationKey, "~1", "/")
+	currentValue, exists := pod.ObjectMeta.Annotations[annotationKey]
+
 	if !rf.Spec.Redis.PreventMasterEviction {
+		// Remove annotation when preventMasterEviction is disabled
+		if exists {
+			return r.k8sService.RemovePodAnnotation(namespace, pod.ObjectMeta.Name, annotationKey)
+		}
 		return nil
 	}
 
-	for annotationKey, annotationValue := range pod.ObjectMeta.Annotations {
-		if annotationKey == strings.ReplaceAll(clusterAutoscalerSafeToEvictAnnotationKey, "~1", "/") &&
-			annotationValue == clusterAutoscalerSafeToEvictAnnotationSlave {
-			return nil
-		}
+	// Add annotation when preventMasterEviction is enabled
+	expectedValue := clusterAutoscalerSafeToEvictAnnotationSlave
+	if !exists || currentValue != expectedValue {
+		return r.k8sService.UpdatePodAnnotations(namespace, pod.ObjectMeta.Name, generateRedisSlaveAnnotations())
 	}
-	return r.k8sService.UpdatePodAnnotations(namespace, pod.ObjectMeta.Name, generateRedisSlaveAnnotations())
+
+	return nil
 }
 
 // CheckAllSlavesFromMaster controlls that all slaves have the same master (the real one)

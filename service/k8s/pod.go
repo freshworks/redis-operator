@@ -25,6 +25,7 @@ type Pod interface {
 	ListPods(namespace string) (*corev1.PodList, error)
 	UpdatePodLabels(namespace, podName string, labels map[string]string) error
 	UpdatePodAnnotations(namespace, podName string, annotations map[string]string) error
+	RemovePodAnnotation(namespace, podName string, annotationKey string) error
 }
 
 // PodService is the pod service implementation using API calls to kubernetes.
@@ -148,6 +149,23 @@ func (p *PodService) UpdatePodAnnotations(namespace, podName string, annotations
 	recordMetrics(namespace, "Pod", podName, "PATCH", err, p.metricsRecorder)
 	if err != nil {
 		p.logger.Errorf("Update pod annotations failed, namespace: %s, pod name: %s, error: %v", namespace, podName, err)
+	}
+	return err
+}
+
+func (p *PodService) RemovePodAnnotation(namespace, podName string, annotationKey string) error {
+	p.logger.Infof("Remove pod annotation, namespace: %s, pod name: %s, annotation key: %s", namespace, podName, annotationKey)
+
+	payload := PatchStringValue{
+		Op:   "remove",
+		Path: "/metadata/annotations/" + annotationKey,
+	}
+	payloadBytes, _ := json.Marshal([]interface{}{payload})
+
+	_, err := p.kubeClient.CoreV1().Pods(namespace).Patch(context.TODO(), podName, types.JSONPatchType, payloadBytes, metav1.PatchOptions{})
+	recordMetrics(namespace, "Pod", podName, "PATCH", err, p.metricsRecorder)
+	if err != nil {
+		p.logger.Errorf("Remove pod annotation failed, namespace: %s, pod name: %s, error: %v", namespace, podName, err)
 	}
 	return err
 }

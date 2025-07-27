@@ -186,6 +186,11 @@ func TestRedisFailover(t *testing.T) {
 	t.Run("Check Skip Reconcile annotation", func(t *testing.T) {
 		clients.testSkipReconcile(t, currentNamespace)
 	})
+
+	// Check that preventMasterEviction annotations are correctly set
+	t.Run("Check PreventMasterEviction annotations", func(t *testing.T) {
+		clients.testPreventMasterEviction(t, currentNamespace)
+	})
 }
 
 func TestRedisFailoverMyMaster(t *testing.T) {
@@ -510,6 +515,81 @@ func (c *clients) testSkipReconcile(t *testing.T, currentNamespace string) {
 	replicas, err = c.getRedisReplicas(name, currentNamespace)
 	require.NoError(err)
 	assert.Equal(originalReplicas+1, replicas)
+}
+
+func (c *clients) testPreventMasterEviction(t *testing.T, currentNamespace string) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// Get the current RedisFailover
+	rf, err := c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Get(context.Background(), name, metav1.GetOptions{})
+	require.NoError(err)
+
+	// Enable preventMasterEviction
+	rf.Spec.Redis.PreventMasterEviction = true
+	rf, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Update(context.Background(), rf, metav1.UpdateOptions{})
+	require.NoError(err)
+
+	// Give time for the operator to reconcile and update pod annotations
+	time.Sleep(1 * time.Minute)
+
+	// Get all Redis pods
+	listOptions := metav1.ListOptions{
+		LabelSelector: labels.SelectorFromSet(labels.Set{
+			"app.kubernetes.io/name":      fmt.Sprintf("rfr-%s", name),
+			"app.kubernetes.io/component": "redis",
+		}).String(),
+	}
+	redisPods, err := c.k8sClient.CoreV1().Pods(currentNamespace).List(context.Background(), listOptions)
+	require.NoError(err)
+	require.True(len(redisPods.Items) > 0, "should have Redis pods")
+
+	// Check that cluster autoscaler annotations are set correctly
+	masterFound := false
+	slaveFound := false
+
+	for _, pod := range redisPods.Items {
+		// Check if pod has cluster autoscaler annotation
+		annotation, exists := pod.Annotations["cluster-autoscaler.kubernetes.io/safe-to-evict"]
+		require.True(exists, "Pod %s should have cluster-autoscaler annotation", pod.Name)
+
+		// Determine if this is master or slave based on role label
+		roleLabel, hasRole := pod.Labels["redisfailovers-role"]
+		require.True(hasRole, "Pod %s should have role label", pod.Name)
+
+		switch roleLabel {
+		case "master":
+			assert.Equal("false", annotation, "Master pod %s should have safe-to-evict=false", pod.Name)
+			masterFound = true
+		case "slave":
+			assert.Equal("true", annotation, "Slave pod %s should have safe-to-evict=true", pod.Name)
+			slaveFound = true
+		}
+	}
+
+	// Ensure we found both master and slave pods
+	assert.True(masterFound, "Should have found at least one master pod")
+	assert.True(slaveFound, "Should have found at least one slave pod")
+
+	// Disable preventMasterEviction and verify annotations are removed
+	rf, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Get(context.Background(), name, metav1.GetOptions{})
+	require.NoError(err)
+	rf.Spec.Redis.PreventMasterEviction = false
+	_, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Update(context.Background(), rf, metav1.UpdateOptions{})
+	require.NoError(err)
+
+	// Give time for the operator to reconcile and remove annotations
+	time.Sleep(1 * time.Minute)
+
+	// Verify annotations are removed when preventMasterEviction is disabled
+	redisPods, err = c.k8sClient.CoreV1().Pods(currentNamespace).List(context.Background(), listOptions)
+	require.NoError(err)
+
+	for _, pod := range redisPods.Items {
+		// When preventMasterEviction is disabled, the cluster autoscaler annotation should be removed
+		_, exists := pod.Annotations["cluster-autoscaler.kubernetes.io/safe-to-evict"]
+		assert.False(exists, "Pod %s should not have cluster-autoscaler annotation when preventMasterEviction is disabled", pod.Name)
+	}
 }
 
 func (c *clients) getRedisReplicas(name string, currentNamespace string) (int32, error) {
