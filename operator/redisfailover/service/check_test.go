@@ -179,6 +179,7 @@ func TestCheckAllSlavesFromMasterGetStatefulSetError(t *testing.T) {
 	ms.On("GetStatefulSetPods", namespace, rfservice.GetRedisName(rf)).Once().Return(nil, errors.New(""))
 	ms.On("UpdatePodLabels", namespace, mock.AnythingOfType("string"), mock.Anything).Once().Return(nil)
 	ms.On("UpdatePodAnnotations", namespace, mock.AnythingOfType("string"), mock.Anything).Once().Return(nil)
+	ms.On("RemovePodAnnotation", namespace, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Once().Return(nil)
 	mr := &mRedisService.Client{}
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
@@ -207,6 +208,7 @@ func TestCheckAllSlavesFromMasterGetSlaveOfError(t *testing.T) {
 	ms.On("GetStatefulSetPods", namespace, rfservice.GetRedisName(rf)).Once().Return(pods, nil)
 	ms.On("UpdatePodLabels", namespace, mock.AnythingOfType("string"), mock.Anything).Once().Return(nil)
 	ms.On("UpdatePodAnnotations", namespace, mock.AnythingOfType("string"), mock.Anything).Once().Return(nil)
+	ms.On("RemovePodAnnotation", namespace, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Once().Return(nil)
 	mr := &mRedisService.Client{}
 	mr.On("GetSlaveOf", "", "0", "").Once().Return("", errors.New(""))
 
@@ -236,6 +238,7 @@ func TestCheckAllSlavesFromMasterDifferentMaster(t *testing.T) {
 	ms.On("GetStatefulSetPods", namespace, rfservice.GetRedisName(rf)).Once().Return(pods, nil)
 	ms.On("UpdatePodLabels", namespace, mock.AnythingOfType("string"), mock.Anything).Once().Return(nil)
 	ms.On("UpdatePodAnnotations", namespace, mock.AnythingOfType("string"), mock.Anything).Once().Return(nil)
+	ms.On("RemovePodAnnotation", namespace, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Once().Return(nil)
 	mr := &mRedisService.Client{}
 	mr.On("GetSlaveOf", "0.0.0.0", "0", "").Once().Return("1.1.1.1", nil)
 
@@ -265,6 +268,7 @@ func TestCheckAllSlavesFromMaster(t *testing.T) {
 	ms.On("GetStatefulSetPods", namespace, rfservice.GetRedisName(rf)).Once().Return(pods, nil)
 	ms.On("UpdatePodLabels", namespace, mock.AnythingOfType("string"), mock.Anything).Once().Return(nil)
 	ms.On("UpdatePodAnnotations", namespace, mock.AnythingOfType("string"), mock.Anything).Once().Return(nil)
+	ms.On("RemovePodAnnotation", namespace, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Once().Return(nil)
 	mr := &mRedisService.Client{}
 	mr.On("GetSlaveOf", "0.0.0.0", "0", "").Once().Return("1.1.1.1", nil)
 
