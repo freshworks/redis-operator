@@ -536,7 +536,7 @@ func (c *clients) testPreventMasterEviction(t *testing.T, currentNamespace strin
 	// Get all Redis pods
 	listOptions := metav1.ListOptions{
 		LabelSelector: labels.SelectorFromSet(labels.Set{
-			"app.kubernetes.io/name":      fmt.Sprintf("rfr-%s", name),
+			"app.kubernetes.io/name":      fmt.Sprintf("redis-%s", name),
 			"app.kubernetes.io/component": "redis",
 		}).String(),
 	}
