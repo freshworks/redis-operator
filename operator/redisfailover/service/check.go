@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -102,6 +103,34 @@ func (r *RedisFailoverChecker) setSlaveLabelIfNecessary(namespace string, pod co
 	return r.k8sService.UpdatePodLabels(namespace, pod.Name, generateRedisSlaveRoleLabel())
 }
 
+func (r *RedisFailoverChecker) setMasterAnnotationIfNecessary(namespace string, pod corev1.Pod, rf *redisfailoverv1.RedisFailover) error {
+	if !rf.Spec.Redis.PreventMasterEviction {
+		return nil
+	}
+
+	for annotationKey, annotationValue := range pod.ObjectMeta.Annotations {
+		if annotationKey == strings.ReplaceAll(clusterAutoscalerSafeToEvictAnnotationKey, "~1", "/") &&
+			annotationValue == clusterAutoscalerSafeToEvictAnnotationMaster {
+			return nil
+		}
+	}
+	return r.k8sService.UpdatePodAnnotations(namespace, pod.ObjectMeta.Name, generateRedisMasterAnnotations())
+}
+
+func (r *RedisFailoverChecker) setSlaveAnnotationIfNecessary(namespace string, pod corev1.Pod, rf *redisfailoverv1.RedisFailover) error {
+	if !rf.Spec.Redis.PreventMasterEviction {
+		return nil
+	}
+
+	for annotationKey, annotationValue := range pod.ObjectMeta.Annotations {
+		if annotationKey == strings.ReplaceAll(clusterAutoscalerSafeToEvictAnnotationKey, "~1", "/") &&
+			annotationValue == clusterAutoscalerSafeToEvictAnnotationSlave {
+			return nil
+		}
+	}
+	return r.k8sService.UpdatePodAnnotations(namespace, pod.ObjectMeta.Name, generateRedisSlaveAnnotations())
+}
+
 // CheckAllSlavesFromMaster controlls that all slaves have the same master (the real one)
 func (r *RedisFailoverChecker) CheckAllSlavesFromMaster(master string, rf *redisfailoverv1.RedisFailover) error {
 	rps, err := r.k8sService.GetStatefulSetPods(rf.Namespace, GetRedisName(rf))
@@ -121,8 +150,16 @@ func (r *RedisFailoverChecker) CheckAllSlavesFromMaster(master string, rf *redis
 			if err != nil {
 				return err
 			}
+			err = r.setMasterAnnotationIfNecessary(rf.Namespace, rp, rf)
+			if err != nil {
+				return err
+			}
 		} else {
 			err = r.setSlaveLabelIfNecessary(rf.Namespace, rp)
+			if err != nil {
+				return err
+			}
+			err = r.setSlaveAnnotationIfNecessary(rf.Namespace, rp, rf)
 			if err != nil {
 				return err
 			}
