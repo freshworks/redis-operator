@@ -6831,6 +6831,8 @@ spec:
                   port:
                     format: int32
                     type: integer
+                  preventMasterEviction:
+                    type: boolean
                   priorityClassName:
                     type: string
                   replicas:
