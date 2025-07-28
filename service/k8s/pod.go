@@ -137,7 +137,7 @@ func (p *PodService) UpdatePodAnnotations(namespace, podName string, annotations
 	var payloads []interface{}
 	for annotationKey, annotationValue := range annotations {
 		payload := PatchStringValue{
-			Op:    "replace",
+			Op:    "add",
 			Path:  "/metadata/annotations/" + annotationKey,
 			Value: annotationValue,
 		}
