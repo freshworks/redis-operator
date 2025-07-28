@@ -533,12 +533,13 @@ func (c *clients) testPreventMasterEviction(t *testing.T, currentNamespace strin
 	// Give time for the operator to reconcile and update pod annotations
 	time.Sleep(1 * time.Minute)
 
-	// Get all Redis pods
+	// Get the Redis StatefulSet to use its match labels
+	redisSS, err := c.k8sClient.AppsV1().StatefulSets(currentNamespace).Get(context.Background(), fmt.Sprintf("rfr-%s", name), metav1.GetOptions{})
+	require.NoError(err)
+
+	// Get all Redis pods using the StatefulSet's match labels
 	listOptions := metav1.ListOptions{
-		LabelSelector: labels.SelectorFromSet(labels.Set{
-			"app.kubernetes.io/name":      fmt.Sprintf("redis-%s", name),
-			"app.kubernetes.io/component": "redis",
-		}).String(),
+		LabelSelector: labels.FormatLabels(redisSS.Spec.Selector.MatchLabels),
 	}
 	redisPods, err := c.k8sClient.CoreV1().Pods(currentNamespace).List(context.Background(), listOptions)
 	require.NoError(err)
