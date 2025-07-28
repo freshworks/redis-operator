@@ -145,6 +145,9 @@ func (p *PodService) UpdatePodAnnotations(namespace, podName string, annotations
 	}
 	payloadBytes, _ := json.Marshal(payloads)
 
+	// DEBUG: Print the actual JSON patch payload
+	p.logger.Infof("DEBUG: JSON Patch payload: %s", string(payloadBytes))
+
 	_, err := p.kubeClient.CoreV1().Pods(namespace).Patch(context.TODO(), podName, types.JSONPatchType, payloadBytes, metav1.PatchOptions{})
 	recordMetrics(namespace, "Pod", podName, "PATCH", err, p.metricsRecorder)
 	if err != nil {
@@ -161,6 +164,9 @@ func (p *PodService) RemovePodAnnotation(namespace, podName string, annotationKe
 		Path: "/metadata/annotations/" + annotationKey,
 	}
 	payloadBytes, _ := json.Marshal([]interface{}{payload})
+
+	// DEBUG: Print the actual JSON patch payload
+	p.logger.Infof("DEBUG: Remove annotation JSON Patch payload: %s", string(payloadBytes))
 
 	_, err := p.kubeClient.CoreV1().Pods(namespace).Patch(context.TODO(), podName, types.JSONPatchType, payloadBytes, metav1.PatchOptions{})
 	recordMetrics(namespace, "Pod", podName, "PATCH", err, p.metricsRecorder)
