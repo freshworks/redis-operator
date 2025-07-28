@@ -110,7 +110,7 @@ func (r *RedisFailoverChecker) setMasterAnnotationIfNecessary(namespace string, 
 	if !rf.Spec.Redis.PreventMasterEviction {
 		// Remove annotation when preventMasterEviction is disabled
 		if exists {
-			return r.k8sService.RemovePodAnnotation(namespace, pod.ObjectMeta.Name, annotationKey)
+			return r.k8sService.RemovePodAnnotation(namespace, pod.ObjectMeta.Name, clusterAutoscalerSafeToEvictAnnotationKey)
 		}
 		return nil
 	}
@@ -131,7 +131,7 @@ func (r *RedisFailoverChecker) setSlaveAnnotationIfNecessary(namespace string, p
 	if !rf.Spec.Redis.PreventMasterEviction {
 		// Remove annotation when preventMasterEviction is disabled
 		if exists {
-			return r.k8sService.RemovePodAnnotation(namespace, pod.ObjectMeta.Name, annotationKey)
+			return r.k8sService.RemovePodAnnotation(namespace, pod.ObjectMeta.Name, clusterAutoscalerSafeToEvictAnnotationKey)
 		}
 		return nil
 	}
