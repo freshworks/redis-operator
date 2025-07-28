@@ -100,8 +100,10 @@ func TestRedisFailover(t *testing.T) {
 		redisClient: redisClient,
 	}
 
-	// Create kubernetes service.
-	k8sservice := k8s.New(k8sClient, customClient, aeClientset, log.Dummy, metrics.Dummy)
+	// Create kubernetes service with real logger for debugging.
+	debugLogger := log.Base()
+	debugLogger.Set("info")
+	k8sservice := k8s.New(k8sClient, customClient, aeClientset, debugLogger, metrics.Dummy)
 
 	// Prepare namespace
 	prepErr := clients.prepareNS(currentNamespace)
@@ -110,8 +112,8 @@ func TestRedisFailover(t *testing.T) {
 	// Give time to the namespace to be ready
 	time.Sleep(15 * time.Second)
 
-	// Create operator and run.
-	redisfailoverOperator, err := redisfailover.New(redisfailover.Config{}, k8sservice, k8sClient, currentNamespace, redisClient, metrics.Dummy, log.Dummy)
+	// Create operator and run with real logger for debugging.
+	redisfailoverOperator, err := redisfailover.New(redisfailover.Config{}, k8sservice, k8sClient, currentNamespace, redisClient, metrics.Dummy, debugLogger)
 	require.NoError(err)
 
 	go func() {
