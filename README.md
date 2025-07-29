@@ -261,6 +261,38 @@ app.kubernetes.io/part-of
 redisfailovers.databases.spotahome.com/name
 ```
 
+### Prevent Master Eviction
+
+The `preventMasterEviction` feature allows you to control whether Redis pods can be evicted by the Kubernetes cluster autoscaler. When enabled, it adds cluster autoscaler annotations to Redis pods to prevent the master from being evicted while allowing slaves to be evicted safely.
+
+This is particularly useful in environments where:
+- You want to prevent disruption to the Redis master during cluster scaling operations
+- You need to ensure high availability by protecting the master from involuntary eviction
+- You want slaves to be evictable for efficient resource utilization
+
+When `preventMasterEviction` is set to `true`:
+- Master pods get the annotation: `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"`
+- Slave pods get the annotation: `cluster-autoscaler.kubernetes.io/safe-to-evict: "true"`
+
+When `preventMasterEviction` is set to `false` (default) or omitted, no cluster autoscaler annotations are added to the pods.
+
+Example configuration:
+
+```yaml
+apiVersion: databases.spotahome.com/v1
+kind: RedisFailover
+metadata:
+  name: example-redisfailover
+spec:
+  sentinel:
+    replicas: 3
+  redis:
+    replicas: 3
+    preventMasterEviction: true
+```
+
+**Note**: The operator will automatically manage these annotations during reconciliation. When you disable `preventMasterEviction`, the annotations will be removed from existing pods.
+
 
 ### ExtraVolumes and ExtraVolumeMounts
 

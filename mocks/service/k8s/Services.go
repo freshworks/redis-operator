@@ -1071,6 +1071,38 @@ func (_m *Services) UpdatePodLabels(namespace string, podName string, labels map
 	return r0
 }
 
+// UpdatePodAnnotations provides a mock function with given fields: namespace, podName, annotations
+func (_m *Services) UpdatePodAnnotations(namespace string, podName string, annotations map[string]string) error {
+	ret := _m.Called(namespace, podName, annotations)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(string, string, map[string]string) error); ok {
+		r0 = rf(namespace, podName, annotations)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// RemovePodAnnotation provides a mock function with given fields: namespace, podName, annotationKey
+func (_m *Services) RemovePodAnnotation(namespace string, podName string, annotationKey string) error {
+	ret := _m.Called(namespace, podName, annotationKey)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RemovePodAnnotation")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(string, string, string) error); ok {
+		r0 = rf(namespace, podName, annotationKey)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // UpdateRole provides a mock function with given fields: namespace, role
 func (_m *Services) UpdateRole(namespace string, role *rbacv1.Role) error {
 	ret := _m.Called(namespace, role)

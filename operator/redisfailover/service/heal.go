@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sort"
 	"strconv"
+	"strings"
 
 	redisfailoverv1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
 	"github.com/freshworks/redis-operator/log"
@@ -61,6 +62,48 @@ func (r *RedisFailoverHealer) setSlaveLabelIfNecessary(namespace string, pod v1.
 	return r.k8sService.UpdatePodLabels(namespace, pod.ObjectMeta.Name, generateRedisSlaveRoleLabel())
 }
 
+func (r *RedisFailoverHealer) setMasterAnnotationIfNecessary(namespace string, pod v1.Pod, rf *redisfailoverv1.RedisFailover) error {
+	annotationKey := strings.ReplaceAll(clusterAutoscalerSafeToEvictAnnotationKey, "~1", "/")
+	currentValue, exists := pod.ObjectMeta.Annotations[annotationKey]
+
+	if !rf.Spec.Redis.PreventMasterEviction {
+		// Remove annotation when preventMasterEviction is disabled
+		if exists {
+			return r.k8sService.RemovePodAnnotation(namespace, pod.ObjectMeta.Name, clusterAutoscalerSafeToEvictAnnotationKey)
+		}
+		return nil
+	}
+
+	// Add annotation when preventMasterEviction is enabled
+	expectedValue := clusterAutoscalerSafeToEvictAnnotationMaster
+	if !exists || currentValue != expectedValue {
+		return r.k8sService.UpdatePodAnnotations(namespace, pod.ObjectMeta.Name, generateRedisMasterAnnotations())
+	}
+
+	return nil
+}
+
+func (r *RedisFailoverHealer) setSlaveAnnotationIfNecessary(namespace string, pod v1.Pod, rf *redisfailoverv1.RedisFailover) error {
+	annotationKey := strings.ReplaceAll(clusterAutoscalerSafeToEvictAnnotationKey, "~1", "/")
+	currentValue, exists := pod.ObjectMeta.Annotations[annotationKey]
+
+	if !rf.Spec.Redis.PreventMasterEviction {
+		// Remove annotation when preventMasterEviction is disabled
+		if exists {
+			return r.k8sService.RemovePodAnnotation(namespace, pod.ObjectMeta.Name, clusterAutoscalerSafeToEvictAnnotationKey)
+		}
+		return nil
+	}
+
+	// Add annotation when preventMasterEviction is enabled
+	expectedValue := clusterAutoscalerSafeToEvictAnnotationSlave
+	if !exists || currentValue != expectedValue {
+		return r.k8sService.UpdatePodAnnotations(namespace, pod.ObjectMeta.Name, generateRedisSlaveAnnotations())
+	}
+
+	return nil
+}
+
 func (r *RedisFailoverHealer) MakeMaster(ip string, rf *redisfailoverv1.RedisFailover) error {
 	password, err := k8s.GetRedisPassword(r.k8sService, rf)
 	if err != nil {
@@ -79,7 +122,14 @@ func (r *RedisFailoverHealer) MakeMaster(ip string, rf *redisfailoverv1.RedisFai
 	}
 	for _, rp := range rps.Items {
 		if rp.Status.PodIP == ip {
-			return r.setMasterLabelIfNecessary(rf.Namespace, rp)
+			err = r.setMasterLabelIfNecessary(rf.Namespace, rp)
+			if err != nil {
+				return err
+			}
+			err = r.setMasterAnnotationIfNecessary(rf.Namespace, rp, rf)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -121,6 +171,10 @@ func (r *RedisFailoverHealer) SetOldestAsMaster(rf *redisfailoverv1.RedisFailove
 			if err != nil {
 				return err
 			}
+			err = r.setMasterAnnotationIfNecessary(rf.Namespace, pod, rf)
+			if err != nil {
+				return err
+			}
 
 			newMasterIP = pod.Status.PodIP
 		} else {
@@ -130,6 +184,11 @@ func (r *RedisFailoverHealer) SetOldestAsMaster(rf *redisfailoverv1.RedisFailove
 			}
 
 			err = r.setSlaveLabelIfNecessary(rf.Namespace, pod)
+			if err != nil {
+				return err
+			}
+
+			err = r.setSlaveAnnotationIfNecessary(rf.Namespace, pod, rf)
 			if err != nil {
 				return err
 			}
@@ -175,6 +234,10 @@ func (r *RedisFailoverHealer) SetMasterOnAll(masterIP string, rf *redisfailoverv
 			if err != nil {
 				return err
 			}
+			err = r.setSlaveAnnotationIfNecessary(rf.Namespace, pod, rf)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -199,6 +262,10 @@ func (r *RedisFailoverHealer) SetExternalMasterOnAll(masterIP, masterPort string
 			return err
 		}
 
+		err = r.setSlaveAnnotationIfNecessary(rf.Namespace, pod, rf)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

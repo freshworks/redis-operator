@@ -24,6 +24,8 @@ type Pod interface {
 	DeletePod(namespace string, name string) error
 	ListPods(namespace string) (*corev1.PodList, error)
 	UpdatePodLabels(namespace, podName string, labels map[string]string) error
+	UpdatePodAnnotations(namespace, podName string, annotations map[string]string) error
+	RemovePodAnnotation(namespace, podName string, annotationKey string) error
 }
 
 // PodService is the pod service implementation using API calls to kubernetes.
@@ -125,6 +127,51 @@ func (p *PodService) UpdatePodLabels(namespace, podName string, labels map[strin
 	recordMetrics(namespace, "Pod", podName, "PATCH", err, p.metricsRecorder)
 	if err != nil {
 		p.logger.Errorf("Update pod labels failed, namespace: %s, pod name: %s, error: %v", namespace, podName, err)
+	}
+	return err
+}
+
+func (p *PodService) UpdatePodAnnotations(namespace, podName string, annotations map[string]string) error {
+	p.logger.Infof("Update pod annotation, namespace: %s, pod name: %s, annotations: %v", namespace, podName, annotations)
+
+	var payloads []interface{}
+	for annotationKey, annotationValue := range annotations {
+		payload := PatchStringValue{
+			Op:    "add",
+			Path:  "/metadata/annotations/" + annotationKey,
+			Value: annotationValue,
+		}
+		payloads = append(payloads, payload)
+	}
+	payloadBytes, _ := json.Marshal(payloads)
+
+	// DEBUG: Print the actual JSON patch payload
+	p.logger.Infof("DEBUG: JSON Patch payload: %s", string(payloadBytes))
+
+	_, err := p.kubeClient.CoreV1().Pods(namespace).Patch(context.TODO(), podName, types.JSONPatchType, payloadBytes, metav1.PatchOptions{})
+	recordMetrics(namespace, "Pod", podName, "PATCH", err, p.metricsRecorder)
+	if err != nil {
+		p.logger.Errorf("Update pod annotations failed, namespace: %s, pod name: %s, error: %v", namespace, podName, err)
+	}
+	return err
+}
+
+func (p *PodService) RemovePodAnnotation(namespace, podName string, annotationKey string) error {
+	p.logger.Infof("Remove pod annotation, namespace: %s, pod name: %s, annotation key: %s", namespace, podName, annotationKey)
+
+	payload := PatchStringValue{
+		Op:   "remove",
+		Path: "/metadata/annotations/" + annotationKey,
+	}
+	payloadBytes, _ := json.Marshal([]interface{}{payload})
+
+	// DEBUG: Print the actual JSON patch payload
+	p.logger.Infof("DEBUG: Remove annotation JSON Patch payload: %s", string(payloadBytes))
+
+	_, err := p.kubeClient.CoreV1().Pods(namespace).Patch(context.TODO(), podName, types.JSONPatchType, payloadBytes, metav1.PatchOptions{})
+	recordMetrics(namespace, "Pod", podName, "PATCH", err, p.metricsRecorder)
+	if err != nil {
+		p.logger.Errorf("Remove pod annotation failed, namespace: %s, pod name: %s, error: %v", namespace, podName, err)
 	}
 	return err
 }
