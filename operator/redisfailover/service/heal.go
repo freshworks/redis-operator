@@ -4,7 +4,6 @@ import (
 	"errors"
 	"sort"
 	"strconv"
-	"strings"
 
 	redisfailoverv1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
 	"github.com/freshworks/redis-operator/log"
@@ -63,8 +62,7 @@ func (r *RedisFailoverHealer) setSlaveLabelIfNecessary(namespace string, pod v1.
 }
 
 func (r *RedisFailoverHealer) setMasterAnnotationIfNecessary(namespace string, pod v1.Pod, rf *redisfailoverv1.RedisFailover) error {
-	annotationKey := strings.ReplaceAll(clusterAutoscalerSafeToEvictAnnotationKey, "~1", "/")
-	currentValue, exists := pod.ObjectMeta.Annotations[annotationKey]
+	currentValue, exists := pod.ObjectMeta.Annotations[clusterAutoscalerSafeToEvictAnnotationKey]
 
 	if !rf.Spec.Redis.PreventMasterEviction {
 		// Remove annotation when preventMasterEviction is disabled
@@ -84,8 +82,7 @@ func (r *RedisFailoverHealer) setMasterAnnotationIfNecessary(namespace string, p
 }
 
 func (r *RedisFailoverHealer) setSlaveAnnotationIfNecessary(namespace string, pod v1.Pod, rf *redisfailoverv1.RedisFailover) error {
-	annotationKey := strings.ReplaceAll(clusterAutoscalerSafeToEvictAnnotationKey, "~1", "/")
-	currentValue, exists := pod.ObjectMeta.Annotations[annotationKey]
+	currentValue, exists := pod.ObjectMeta.Annotations[clusterAutoscalerSafeToEvictAnnotationKey]
 
 	if !rf.Spec.Redis.PreventMasterEviction {
 		// Remove annotation when preventMasterEviction is disabled

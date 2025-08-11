@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -104,8 +103,7 @@ func (r *RedisFailoverChecker) setSlaveLabelIfNecessary(namespace string, pod co
 }
 
 func (r *RedisFailoverChecker) setMasterAnnotationIfNecessary(namespace string, pod corev1.Pod, rf *redisfailoverv1.RedisFailover) error {
-	annotationKey := strings.ReplaceAll(clusterAutoscalerSafeToEvictAnnotationKey, "~1", "/")
-	currentValue, exists := pod.ObjectMeta.Annotations[annotationKey]
+	currentValue, exists := pod.ObjectMeta.Annotations[clusterAutoscalerSafeToEvictAnnotationKey]
 
 	if !rf.Spec.Redis.PreventMasterEviction {
 		// Remove annotation when preventMasterEviction is disabled
@@ -125,8 +123,7 @@ func (r *RedisFailoverChecker) setMasterAnnotationIfNecessary(namespace string, 
 }
 
 func (r *RedisFailoverChecker) setSlaveAnnotationIfNecessary(namespace string, pod corev1.Pod, rf *redisfailoverv1.RedisFailover) error {
-	annotationKey := strings.ReplaceAll(clusterAutoscalerSafeToEvictAnnotationKey, "~1", "/")
-	currentValue, exists := pod.ObjectMeta.Annotations[annotationKey]
+	currentValue, exists := pod.ObjectMeta.Annotations[clusterAutoscalerSafeToEvictAnnotationKey]
 
 	if !rf.Spec.Redis.PreventMasterEviction {
 		// Remove annotation when preventMasterEviction is disabled
