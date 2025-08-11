@@ -129,9 +129,8 @@ func (p *PodService) UpdatePodLabels(namespace, podName string, labels map[strin
 	return err
 }
 
-func (p *PodService) UpdatePodAnnotations(namespace, podName string, annotations map[string]string) error {
-	p.logger.Infof("Update pod annotation, namespace: %s, pod name: %s, annotations: %v", namespace, podName, annotations)
-
+// modifyPodAnnotations is a helper function that gets a pod, modifies its annotations using the provided function, and updates it
+func (p *PodService) modifyPodAnnotations(namespace, podName, operation string, modifyFunc func(map[string]string)) error {
 	// Get the current pod
 	pod, err := p.kubeClient.CoreV1().Pods(namespace).Get(context.TODO(), podName, metav1.GetOptions{})
 	if err != nil {
@@ -145,41 +144,34 @@ func (p *PodService) UpdatePodAnnotations(namespace, podName string, annotations
 		pod.Annotations = make(map[string]string)
 	}
 
-	// Add/update the annotations
-	for annotationKey, annotationValue := range annotations {
-		pod.Annotations[annotationKey] = annotationValue
-	}
+	// Apply the modification function
+	modifyFunc(pod.Annotations)
 
 	// Update the pod
 	_, err = p.kubeClient.CoreV1().Pods(namespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
 	recordMetrics(namespace, "Pod", podName, "UPDATE", err, p.metricsRecorder)
 	if err != nil {
-		p.logger.Errorf("Update pod annotations failed, namespace: %s, pod name: %s, error: %v", namespace, podName, err)
+		p.logger.Errorf("%s pod annotations failed, namespace: %s, pod name: %s, error: %v", operation, namespace, podName, err)
 	}
 	return err
+}
+
+func (p *PodService) UpdatePodAnnotations(namespace, podName string, annotations map[string]string) error {
+	p.logger.Infof("Update pod annotation, namespace: %s, pod name: %s, annotations: %v", namespace, podName, annotations)
+
+	return p.modifyPodAnnotations(namespace, podName, "Update", func(podAnnotations map[string]string) {
+		// Add/update the annotations
+		for annotationKey, annotationValue := range annotations {
+			podAnnotations[annotationKey] = annotationValue
+		}
+	})
 }
 
 func (p *PodService) RemovePodAnnotation(namespace, podName string, annotationKey string) error {
 	p.logger.Infof("Remove pod annotation, namespace: %s, pod name: %s, annotation key: %s", namespace, podName, annotationKey)
 
-	// Get the current pod
-	pod, err := p.kubeClient.CoreV1().Pods(namespace).Get(context.TODO(), podName, metav1.GetOptions{})
-	if err != nil {
-		p.logger.Errorf("Failed to get pod %s in namespace %s: %v", podName, namespace, err)
-		recordMetrics(namespace, "Pod", podName, "GET", err, p.metricsRecorder)
-		return err
-	}
-
-	// Remove the annotation if it exists
-	if pod.Annotations != nil {
-		delete(pod.Annotations, annotationKey)
-	}
-
-	// Update the pod
-	_, err = p.kubeClient.CoreV1().Pods(namespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
-	recordMetrics(namespace, "Pod", podName, "UPDATE", err, p.metricsRecorder)
-	if err != nil {
-		p.logger.Errorf("Remove pod annotation failed, namespace: %s, pod name: %s, error: %v", namespace, podName, err)
-	}
-	return err
+	return p.modifyPodAnnotations(namespace, podName, "Remove", func(podAnnotations map[string]string) {
+		// Remove the annotation if it exists
+		delete(podAnnotations, annotationKey)
+	})
 }
