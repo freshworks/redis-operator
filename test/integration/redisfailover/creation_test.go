@@ -90,6 +90,21 @@ func TestRedisFailover(t *testing.T) {
 	k8sClient, customClient, aeClientset, err := utils.CreateKubernetesClients(flags)
 	require.NoError(err)
 
+	// Debug: Print cluster info to confirm we're connected to the right cluster
+	serverVersion, err := k8sClient.Discovery().ServerVersion()
+	if err == nil {
+		t.Logf("Connected to Kubernetes cluster: %s", serverVersion.String())
+	}
+
+	// Get cluster nodes to confirm it's minikube
+	nodes, err := k8sClient.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
+	if err == nil {
+		t.Logf("Cluster nodes:")
+		for _, node := range nodes.Items {
+			t.Logf("  - %s (labels: %v)", node.Name, node.Labels)
+		}
+	}
+
 	// Create the redis clients
 	redisClient := redis.New(metrics.Dummy)
 

@@ -2,9 +2,6 @@ package k8s
 
 import (
 	"context"
-	"encoding/json"
-
-	"k8s.io/apimachinery/pkg/types"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -102,29 +99,30 @@ func (p *PodService) ListPods(namespace string) (*corev1.PodList, error) {
 	return pods, err
 }
 
-// PatchStringValue specifies a patch operation for a string.
-type PatchStringValue struct {
-	Op    string      `json:"op"`
-	Path  string      `json:"path"`
-	Value interface{} `json:"value"`
-}
-
 func (p *PodService) UpdatePodLabels(namespace, podName string, labels map[string]string) error {
 	p.logger.Infof("Update pod label, namespace: %s, pod name: %s, labels: %v", namespace, podName, labels)
 
-	var payloads []interface{}
-	for labelKey, labelValue := range labels {
-		payload := PatchStringValue{
-			Op:    "replace",
-			Path:  "/metadata/labels/" + labelKey,
-			Value: labelValue,
-		}
-		payloads = append(payloads, payload)
+	// Get the current pod
+	pod, err := p.kubeClient.CoreV1().Pods(namespace).Get(context.TODO(), podName, metav1.GetOptions{})
+	if err != nil {
+		p.logger.Errorf("Failed to get pod %s in namespace %s: %v", podName, namespace, err)
+		recordMetrics(namespace, "Pod", podName, "GET", err, p.metricsRecorder)
+		return err
 	}
-	payloadBytes, _ := json.Marshal(payloads)
 
-	_, err := p.kubeClient.CoreV1().Pods(namespace).Patch(context.TODO(), podName, types.JSONPatchType, payloadBytes, metav1.PatchOptions{})
-	recordMetrics(namespace, "Pod", podName, "PATCH", err, p.metricsRecorder)
+	// Initialize labels map if it doesn't exist
+	if pod.Labels == nil {
+		pod.Labels = make(map[string]string)
+	}
+
+	// Add/update the labels
+	for labelKey, labelValue := range labels {
+		pod.Labels[labelKey] = labelValue
+	}
+
+	// Update the pod
+	_, err = p.kubeClient.CoreV1().Pods(namespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
+	recordMetrics(namespace, "Pod", podName, "UPDATE", err, p.metricsRecorder)
 	if err != nil {
 		p.logger.Errorf("Update pod labels failed, namespace: %s, pod name: %s, error: %v", namespace, podName, err)
 	}
@@ -134,22 +132,27 @@ func (p *PodService) UpdatePodLabels(namespace, podName string, labels map[strin
 func (p *PodService) UpdatePodAnnotations(namespace, podName string, annotations map[string]string) error {
 	p.logger.Infof("Update pod annotation, namespace: %s, pod name: %s, annotations: %v", namespace, podName, annotations)
 
-	var payloads []interface{}
-	for annotationKey, annotationValue := range annotations {
-		payload := PatchStringValue{
-			Op:    "add",
-			Path:  "/metadata/annotations/" + annotationKey,
-			Value: annotationValue,
-		}
-		payloads = append(payloads, payload)
+	// Get the current pod
+	pod, err := p.kubeClient.CoreV1().Pods(namespace).Get(context.TODO(), podName, metav1.GetOptions{})
+	if err != nil {
+		p.logger.Errorf("Failed to get pod %s in namespace %s: %v", podName, namespace, err)
+		recordMetrics(namespace, "Pod", podName, "GET", err, p.metricsRecorder)
+		return err
 	}
-	payloadBytes, _ := json.Marshal(payloads)
 
-	// DEBUG: Print the actual JSON patch payload
-	p.logger.Infof("DEBUG: JSON Patch payload: %s", string(payloadBytes))
+	// Initialize annotations map if it doesn't exist
+	if pod.Annotations == nil {
+		pod.Annotations = make(map[string]string)
+	}
 
-	_, err := p.kubeClient.CoreV1().Pods(namespace).Patch(context.TODO(), podName, types.JSONPatchType, payloadBytes, metav1.PatchOptions{})
-	recordMetrics(namespace, "Pod", podName, "PATCH", err, p.metricsRecorder)
+	// Add/update the annotations
+	for annotationKey, annotationValue := range annotations {
+		pod.Annotations[annotationKey] = annotationValue
+	}
+
+	// Update the pod
+	_, err = p.kubeClient.CoreV1().Pods(namespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
+	recordMetrics(namespace, "Pod", podName, "UPDATE", err, p.metricsRecorder)
 	if err != nil {
 		p.logger.Errorf("Update pod annotations failed, namespace: %s, pod name: %s, error: %v", namespace, podName, err)
 	}
@@ -159,17 +162,22 @@ func (p *PodService) UpdatePodAnnotations(namespace, podName string, annotations
 func (p *PodService) RemovePodAnnotation(namespace, podName string, annotationKey string) error {
 	p.logger.Infof("Remove pod annotation, namespace: %s, pod name: %s, annotation key: %s", namespace, podName, annotationKey)
 
-	payload := PatchStringValue{
-		Op:   "remove",
-		Path: "/metadata/annotations/" + annotationKey,
+	// Get the current pod
+	pod, err := p.kubeClient.CoreV1().Pods(namespace).Get(context.TODO(), podName, metav1.GetOptions{})
+	if err != nil {
+		p.logger.Errorf("Failed to get pod %s in namespace %s: %v", podName, namespace, err)
+		recordMetrics(namespace, "Pod", podName, "GET", err, p.metricsRecorder)
+		return err
 	}
-	payloadBytes, _ := json.Marshal([]interface{}{payload})
 
-	// DEBUG: Print the actual JSON patch payload
-	p.logger.Infof("DEBUG: Remove annotation JSON Patch payload: %s", string(payloadBytes))
+	// Remove the annotation if it exists
+	if pod.Annotations != nil {
+		delete(pod.Annotations, annotationKey)
+	}
 
-	_, err := p.kubeClient.CoreV1().Pods(namespace).Patch(context.TODO(), podName, types.JSONPatchType, payloadBytes, metav1.PatchOptions{})
-	recordMetrics(namespace, "Pod", podName, "PATCH", err, p.metricsRecorder)
+	// Update the pod
+	_, err = p.kubeClient.CoreV1().Pods(namespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
+	recordMetrics(namespace, "Pod", podName, "UPDATE", err, p.metricsRecorder)
 	if err != nil {
 		p.logger.Errorf("Remove pod annotation failed, namespace: %s, pod name: %s, error: %v", namespace, podName, err)
 	}
