@@ -90,21 +90,6 @@ func TestRedisFailover(t *testing.T) {
 	k8sClient, customClient, aeClientset, err := utils.CreateKubernetesClients(flags)
 	require.NoError(err)
 
-	// Debug: Print cluster info to confirm we're connected to the right cluster
-	serverVersion, err := k8sClient.Discovery().ServerVersion()
-	if err == nil {
-		t.Logf("Connected to Kubernetes cluster: %s", serverVersion.String())
-	}
-
-	// Get cluster nodes to confirm it's minikube
-	nodes, err := k8sClient.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
-	if err == nil {
-		t.Logf("Cluster nodes:")
-		for _, node := range nodes.Items {
-			t.Logf("  - %s (labels: %v)", node.Name, node.Labels)
-		}
-	}
-
 	// Create the redis clients
 	redisClient := redis.New(metrics.Dummy)
 
@@ -115,10 +100,8 @@ func TestRedisFailover(t *testing.T) {
 		redisClient: redisClient,
 	}
 
-	// Create kubernetes service with real logger for debugging.
-	debugLogger := log.Base()
-	debugLogger.Set("info")
-	k8sservice := k8s.New(k8sClient, customClient, aeClientset, debugLogger, metrics.Dummy)
+	// Create kubernetes service.
+	k8sservice := k8s.New(k8sClient, customClient, aeClientset, log.Dummy, metrics.Dummy)
 
 	// Prepare namespace
 	prepErr := clients.prepareNS(currentNamespace)
@@ -127,8 +110,8 @@ func TestRedisFailover(t *testing.T) {
 	// Give time to the namespace to be ready
 	time.Sleep(15 * time.Second)
 
-	// Create operator and run with real logger for debugging.
-	redisfailoverOperator, err := redisfailover.New(redisfailover.Config{}, k8sservice, k8sClient, currentNamespace, redisClient, metrics.Dummy, debugLogger)
+	// Create operator and run.
+	redisfailoverOperator, err := redisfailover.New(redisfailover.Config{}, k8sservice, k8sClient, currentNamespace, redisClient, metrics.Dummy, log.Dummy)
 	require.NoError(err)
 
 	go func() {
@@ -548,7 +531,7 @@ func (c *clients) testPreventMasterEviction(t *testing.T, currentNamespace strin
 	require.NoError(err)
 
 	// Give time for the operator to reconcile and update pod annotations
-	time.Sleep(1 * time.Minute)
+	time.Sleep(35 * time.Second)
 
 	// Get the Redis StatefulSet to use its match labels
 	redisSS, err := c.k8sClient.AppsV1().StatefulSets(currentNamespace).Get(context.Background(), fmt.Sprintf("rfr-%s", name), metav1.GetOptions{})
@@ -562,65 +545,6 @@ func (c *clients) testPreventMasterEviction(t *testing.T, currentNamespace strin
 	require.NoError(err)
 	require.True(len(redisPods.Items) > 0, "should have Redis pods")
 
-	// Debug: Print detailed pod info and test manual annotation setting
-	t.Logf("=== DEBUG: Pod Status Before Annotation Check ===")
-	for _, pod := range redisPods.Items {
-		t.Logf("Pod %s:", pod.Name)
-		t.Logf("  Phase: %s", pod.Status.Phase)
-		t.Logf("  Labels: %v", pod.Labels)
-		t.Logf("  Annotations: %v", pod.Annotations)
-
-		// Test manual annotation setting for the first pod
-		if pod.Name == fmt.Sprintf("rfr-%s-0", name) {
-			t.Logf("=== DEBUG: Testing manual annotation on pod %s ===", pod.Name)
-
-			// Try with proper JSON Patch escaping first
-			payload := `[{"op":"add","path":"/metadata/annotations/cluster-autoscaler.kubernetes.io~1safe-to-evict","value":"false"}]`
-			t.Logf("DEBUG: Manual patch payload with escaped path: %s", payload)
-
-			_, patchErr := c.k8sClient.CoreV1().Pods(currentNamespace).Patch(
-				context.Background(),
-				pod.Name,
-				"application/json-patch+json",
-				[]byte(payload),
-				metav1.PatchOptions{},
-			)
-			if patchErr != nil {
-				t.Logf("DEBUG: Manual patch with escaped path failed: %v", patchErr)
-
-				// Try without escaping to see the difference
-				payload2 := `[{"op":"add","path":"/metadata/annotations/cluster-autoscaler.kubernetes.io/safe-to-evict","value":"false"}]`
-				t.Logf("DEBUG: Manual patch payload without escaping: %s", payload2)
-
-				_, patchErr2 := c.k8sClient.CoreV1().Pods(currentNamespace).Patch(
-					context.Background(),
-					pod.Name,
-					"application/json-patch+json",
-					[]byte(payload2),
-					metav1.PatchOptions{},
-				)
-				if patchErr2 != nil {
-					t.Logf("DEBUG: Manual patch without escaping also failed: %v", patchErr2)
-				} else {
-					t.Logf("DEBUG: Manual patch without escaping succeeded!")
-				}
-			} else {
-				t.Logf("DEBUG: Manual patch with escaped path succeeded!")
-			}
-
-			// Get updated pod to see current annotations
-			updatedPod, getErr := c.k8sClient.CoreV1().Pods(currentNamespace).Get(context.Background(), pod.Name, metav1.GetOptions{})
-			if getErr == nil {
-				t.Logf("DEBUG: Pod annotations after manual patch attempt: %v", updatedPod.Annotations)
-			}
-		}
-	}
-
-	// Also check RedisFailover status
-	rf, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Get(context.Background(), name, metav1.GetOptions{})
-	require.NoError(err)
-	t.Logf("DEBUG: RedisFailover preventMasterEviction setting: %v", rf.Spec.Redis.PreventMasterEviction)
-
 	// Check that cluster autoscaler annotations are set correctly
 	masterFound := false
 	slaveFound := false
@@ -628,10 +552,6 @@ func (c *clients) testPreventMasterEviction(t *testing.T, currentNamespace strin
 	for _, pod := range redisPods.Items {
 		// Check if pod has cluster autoscaler annotation
 		annotation, exists := pod.Annotations["cluster-autoscaler.kubernetes.io/safe-to-evict"]
-		if !exists {
-			t.Logf("DEBUG: Pod %s is missing cluster-autoscaler annotation", pod.Name)
-			t.Logf("DEBUG: All annotations on pod %s: %v", pod.Name, pod.Annotations)
-		}
 		require.True(exists, "Pod %s should have cluster-autoscaler annotation", pod.Name)
 
 		// Determine if this is master or slave based on role label
@@ -660,7 +580,7 @@ func (c *clients) testPreventMasterEviction(t *testing.T, currentNamespace strin
 	require.NoError(err)
 
 	// Give time for the operator to reconcile and remove annotations
-	time.Sleep(1 * time.Minute)
+	time.Sleep(35 * time.Second)
 
 	// Verify annotations are removed when preventMasterEviction is disabled
 	redisPods, err = c.k8sClient.CoreV1().Pods(currentNamespace).List(context.Background(), listOptions)
@@ -679,13 +599,4 @@ func (c *clients) getRedisReplicas(name string, currentNamespace string) (int32,
 		return 0, err
 	}
 	return *redisSS.Spec.Replicas, nil
-}
-
-func isPodReady(pod corev1.Pod) bool {
-	for _, condition := range pod.Status.Conditions {
-		if condition.Type == corev1.PodReady {
-			return condition.Status == corev1.ConditionTrue
-		}
-	}
-	return false
 }
