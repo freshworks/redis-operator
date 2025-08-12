@@ -2,6 +2,9 @@ package k8s
 
 import (
 	"context"
+	"encoding/json"
+
+	"k8s.io/apimachinery/pkg/types"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -99,30 +102,30 @@ func (p *PodService) ListPods(namespace string) (*corev1.PodList, error) {
 	return pods, err
 }
 
+// PatchStringValue specifies a patch operation for a string.
+type PatchStringValue struct {
+	Op    string      `json:"op"`
+	Path  string      `json:"path"`
+	Value interface{} `json:"value"`
+}
+
 func (p *PodService) UpdatePodLabels(namespace, podName string, labels map[string]string) error {
 	p.logger.Infof("Update pod label, namespace: %s, pod name: %s, labels: %v", namespace, podName, labels)
 
-	// Get the current pod
-	pod, err := p.kubeClient.CoreV1().Pods(namespace).Get(context.TODO(), podName, metav1.GetOptions{})
-	if err != nil {
-		p.logger.Errorf("Failed to get pod %s in namespace %s: %v", podName, namespace, err)
-		recordMetrics(namespace, "Pod", podName, "GET", err, p.metricsRecorder)
-		return err
-	}
-
-	// Initialize labels map if it doesn't exist
-	if pod.Labels == nil {
-		pod.Labels = make(map[string]string)
-	}
-
-	// Add/update the labels
+	var payloads []interface{}
 	for labelKey, labelValue := range labels {
-		pod.Labels[labelKey] = labelValue
+		payload := PatchStringValue{
+			Op:    "replace",
+			Path:  "/metadata/labels/" + labelKey,
+			Value: labelValue,
+		}
+		payloads = append(payloads, payload)
 	}
+	payloadBytes, _ := json.Marshal(payloads)
 
-	// Update the pod
-	_, err = p.kubeClient.CoreV1().Pods(namespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
-	recordMetrics(namespace, "Pod", podName, "UPDATE", err, p.metricsRecorder)
+	_, err := p.kubeClient.CoreV1().Pods(namespace).Patch(context.TODO(), podName, types.JSONPatchType, payloadBytes, metav1.PatchOptions{})
+
+	recordMetrics(namespace, "Pod", podName, "PATCH", err, p.metricsRecorder)
 	if err != nil {
 		p.logger.Errorf("Update pod labels failed, namespace: %s, pod name: %s, error: %v", namespace, podName, err)
 	}
