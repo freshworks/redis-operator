@@ -321,7 +321,7 @@ func (c *client) SetCustomSentinelConfig(ip, masterName string, configs []string
 		if err != nil {
 			return err
 		}
-		if err := c.applySentinelConfig(param, masterName, value, rClient); err != nil {
+		if err := c.applySentinelConfig(param, value, masterName, rClient); err != nil {
 			return err
 		}
 	}
