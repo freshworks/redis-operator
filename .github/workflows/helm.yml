@@ -24,8 +24,27 @@ jobs:
 
       - name: Release
         uses: helm/chart-releaser-action@v1.5.0
+        id: cr
         with:
           charts_dir: charts
           config: charts/chart-release-config.yaml
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+      # setup access to container registry
+      - name: Setup access to container registry
+        uses: docker/login-action@v3
+        if: ${{ steps.cr.outputs.changed_charts }}
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # push charts to container registry
+      - name: Push charts to container registry
+        if: ${{ steps.cr.outputs.changed_charts }}
+        run: |
+          for CHART in .cr-release-packages/*; do
+            if [ -z "${CHART:-}" ]; then break; fi
+            helm push "${CHART}" oci://ghcr.io/${{ github.repository_owner }}/charts
+          done
