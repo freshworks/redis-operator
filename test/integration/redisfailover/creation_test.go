@@ -186,6 +186,11 @@ func TestRedisFailover(t *testing.T) {
 	t.Run("Check Skip Reconcile annotation", func(t *testing.T) {
 		clients.testSkipReconcile(t, currentNamespace)
 	})
+
+	// Check that master/slave pod annotations work as expected
+	t.Run("Check Master/Slave Pod Annotations", func(t *testing.T) {
+		clients.testMasterSlavePodAnnotations(t, currentNamespace)
+	})
 }
 
 func TestRedisFailoverMyMaster(t *testing.T) {
@@ -518,4 +523,80 @@ func (c *clients) getRedisReplicas(name string, currentNamespace string) (int32,
 		return 0, err
 	}
 	return *redisSS.Spec.Replicas, nil
+}
+
+func (c *clients) testMasterSlavePodAnnotations(t *testing.T, currentNamespace string) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// Get the RF
+	rf, err := c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Get(context.Background(), name, metav1.GetOptions{})
+	require.NoError(err)
+
+	// Add master/slave pod annotations
+	rf.Spec.Redis.PodAnnotations = map[string]string{
+		"common": "value",
+	}
+	rf.Spec.Redis.MasterPodAnnotations = map[string]string{
+		"role": "master",
+	}
+	rf.Spec.Redis.SlavePodAnnotations = map[string]string{
+		"role": "slave",
+	}
+	_, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Update(context.Background(), rf, metav1.UpdateOptions{})
+	require.NoError(err)
+
+	// Giving time to the operator to update pods
+	time.Sleep(30 * time.Second)
+
+	// Get Redis pods using StatefulSet selector (same pattern as other tests)
+	redisSS, err := c.k8sClient.AppsV1().StatefulSets(currentNamespace).Get(context.Background(), fmt.Sprintf("rfr-%s", name), metav1.GetOptions{})
+	assert.NoError(err)
+
+	listOptions := metav1.ListOptions{
+		LabelSelector: labels.FormatLabels(redisSS.Spec.Selector.MatchLabels),
+	}
+	redisPods, err := c.k8sClient.CoreV1().Pods(currentNamespace).List(context.Background(), listOptions)
+	assert.NoError(err)
+	assert.NotEmpty(redisPods.Items)
+
+	// Check master and slave pods have correct annotations
+	masterFound := false
+	slaveFound := false
+	for _, pod := range redisPods.Items {
+		if pod.Labels["redisfailovers-role"] == "master" {
+			masterFound = true
+			assert.Equal("value", pod.Annotations["common"], "Master should have common annotation")
+			assert.Equal("master", pod.Annotations["role"], "Master should have master role annotation")
+		} else if pod.Labels["redisfailovers-role"] == "slave" {
+			slaveFound = true
+			assert.Equal("value", pod.Annotations["common"], "Slave should have common annotation")
+			assert.Equal("slave", pod.Annotations["role"], "Slave should have slave role annotation")
+		}
+	}
+	assert.True(masterFound, "Master pod should be found")
+	assert.True(slaveFound, "Slave pods should be found")
+
+	// Remove annotations
+	rf, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Get(context.Background(), name, metav1.GetOptions{})
+	require.NoError(err)
+	rf.Spec.Redis.PodAnnotations = nil
+	rf.Spec.Redis.MasterPodAnnotations = nil
+	rf.Spec.Redis.SlavePodAnnotations = nil
+	_, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Update(context.Background(), rf, metav1.UpdateOptions{})
+	require.NoError(err)
+
+	// Giving time to the operator to update pods
+	time.Sleep(30 * time.Second)
+
+	// Verify annotations are removed (use same StatefulSet selector)
+	redisPods, err = c.k8sClient.CoreV1().Pods(currentNamespace).List(context.Background(), listOptions)
+	assert.NoError(err)
+
+	for _, pod := range redisPods.Items {
+		_, hasCommon := pod.Annotations["common"]
+		_, hasRole := pod.Annotations["role"]
+		assert.False(hasCommon, "Pod %s should not have common annotation after removal", pod.Name)
+		assert.False(hasRole, "Pod %s should not have role annotation after removal", pod.Name)
+	}
 }

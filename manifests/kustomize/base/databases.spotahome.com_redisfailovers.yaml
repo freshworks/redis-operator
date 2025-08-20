@@ -6828,6 +6828,14 @@ spec:
                     additionalProperties:
                       type: string
                     type: object
+                  masterPodAnnotations:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  slavePodAnnotations:
+                    additionalProperties:
+                      type: string
+                    type: object
                   port:
                     format: int32
                     type: integer

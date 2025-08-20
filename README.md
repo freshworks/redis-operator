@@ -202,6 +202,13 @@ In order to use a custom Kubernetes [Service Account](https://kubernetes.io/docs
 By default, no pod annotations will be applied to Redis nor Sentinel pods.
 
 In order to apply custom pod Annotations, you can provide the `podAnnotations` option inside redis/sentinel spec. An example can be found in the [custom annotations example file](example/redisfailover/custom-annotations.yaml).
+
+#### Master and Slave Specific Pod Annotations
+For Redis pods, you can apply role-specific annotations using `masterPodAnnotations` and `slavePodAnnotations` in addition to common `podAnnotations`. This allows different annotations for master vs slave pods (e.g., backup configurations, monitoring, alerting).
+
+An example can be found in the [master-slave pod annotations example file](example/redisfailover/master-slave-pod-annotations.yaml).
+
+**Note**: These role-specific annotations are only available for Redis pods, not Sentinel pods.
 ### Custom Service Annotations
 By default, no service annotations will be applied to the Redis nor Sentinel services.
 

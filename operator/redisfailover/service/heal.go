@@ -79,7 +79,15 @@ func (r *RedisFailoverHealer) MakeMaster(ip string, rf *redisfailoverv1.RedisFai
 	}
 	for _, rp := range rps.Items {
 		if rp.Status.PodIP == ip {
-			return r.setMasterLabelIfNecessary(rf.Namespace, rp)
+			err := r.setMasterLabelIfNecessary(rf.Namespace, rp)
+			if err != nil {
+				return err
+			}
+			podAnnotations := generateRedisMasterAnnotations(rf)
+			if len(podAnnotations) > 0 {
+				return r.k8sService.UpdatePodAnnotations(rf.Namespace, rp.ObjectMeta.Name, podAnnotations)
+			}
+			return nil
 		}
 	}
 	return nil
@@ -108,6 +116,7 @@ func (r *RedisFailoverHealer) SetOldestAsMaster(rf *redisfailoverv1.RedisFailove
 	port := getRedisPort(rf.Spec.Redis.Port)
 	newMasterIP := ""
 	for _, pod := range ssp.Items {
+		var podAnnotations map[string]string
 		if newMasterIP == "" {
 			newMasterIP = pod.Status.PodIP
 			r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("New master is %s with ip %s", pod.Name, newMasterIP)
@@ -122,6 +131,7 @@ func (r *RedisFailoverHealer) SetOldestAsMaster(rf *redisfailoverv1.RedisFailove
 				return err
 			}
 
+			podAnnotations = generateRedisMasterAnnotations(rf)
 			newMasterIP = pod.Status.PodIP
 		} else {
 			r.logger.Infof("Making pod %s slave of %s", pod.Name, newMasterIP)
@@ -130,6 +140,14 @@ func (r *RedisFailoverHealer) SetOldestAsMaster(rf *redisfailoverv1.RedisFailove
 			}
 
 			err = r.setSlaveLabelIfNecessary(rf.Namespace, pod)
+			if err != nil {
+				return err
+			}
+
+			podAnnotations = generateRedisSlaveAnnotations(rf)
+		}
+		if len(podAnnotations) > 0 {
+			err = r.k8sService.UpdatePodAnnotations(rf.Namespace, pod.Name, podAnnotations)
 			if err != nil {
 				return err
 			}
@@ -174,6 +192,14 @@ func (r *RedisFailoverHealer) SetMasterOnAll(masterIP string, rf *redisfailoverv
 			err = r.setSlaveLabelIfNecessary(rf.Namespace, pod)
 			if err != nil {
 				return err
+			}
+
+			podAnnotations := generateRedisSlaveAnnotations(rf)
+			if len(podAnnotations) > 0 {
+				err = r.k8sService.UpdatePodAnnotations(rf.Namespace, pod.Name, podAnnotations)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}

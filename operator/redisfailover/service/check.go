@@ -116,13 +116,22 @@ func (r *RedisFailoverChecker) CheckAllSlavesFromMaster(master string, rf *redis
 
 	rport := getRedisPort(rf.Spec.Redis.Port)
 	for _, rp := range rps.Items {
+		var podAnnotations map[string]string
 		if rp.Status.PodIP == master {
 			err = r.setMasterLabelIfNecessary(rf.Namespace, rp)
 			if err != nil {
 				return err
 			}
+			podAnnotations = generateRedisMasterAnnotations(rf)
 		} else {
 			err = r.setSlaveLabelIfNecessary(rf.Namespace, rp)
+			if err != nil {
+				return err
+			}
+			podAnnotations = generateRedisSlaveAnnotations(rf)
+		}
+		if len(podAnnotations) > 0 {
+			err = r.k8sService.UpdatePodAnnotations(rf.Namespace, rp.Name, podAnnotations)
 			if err != nil {
 				return err
 			}

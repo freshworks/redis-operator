@@ -59,6 +59,8 @@ type RedisSettings struct {
 	TopologySpreadConstraints     []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
 	NodeSelector                  map[string]string                 `json:"nodeSelector,omitempty"`
 	PodAnnotations                map[string]string                 `json:"podAnnotations,omitempty"`
+	MasterPodAnnotations          map[string]string                 `json:"masterPodAnnotations,omitempty"`
+	SlavePodAnnotations           map[string]string                 `json:"slavePodAnnotations,omitempty"`
 	ServiceAnnotations            map[string]string                 `json:"serviceAnnotations,omitempty"`
 	HostNetwork                   bool                              `json:"hostNetwork,omitempty"`
 	DNSPolicy                     corev1.DNSPolicy                  `json:"dnsPolicy,omitempty"`
