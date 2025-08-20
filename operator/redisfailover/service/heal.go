@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"maps"
 	"sort"
 	"strconv"
 
@@ -61,14 +62,10 @@ func (r *RedisFailoverHealer) setSlaveLabelIfNecessary(namespace string, pod v1.
 	return r.k8sService.UpdatePodLabels(namespace, pod.ObjectMeta.Name, generateRedisSlaveRoleLabel())
 }
 
-// updatePodAnnotationsIfNecessary updates pod annotations only if our managed annotations differ
+// updatePodAnnotationsIfNecessary updates pod annotations only if they differ
 func (r *RedisFailoverHealer) updatePodAnnotationsIfNecessary(pod v1.Pod, desiredAnnotations map[string]string) error {
-	// Check if any of our managed annotations need updating
-	for key, desiredValue := range desiredAnnotations {
-		if currentValue, exists := pod.ObjectMeta.Annotations[key]; !exists || currentValue != desiredValue {
-			// Something needs updating, delegate to the update function which handles merging
-			return r.k8sService.UpdatePodAnnotations(pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, desiredAnnotations)
-		}
+	if !maps.Equal(pod.ObjectMeta.Annotations, desiredAnnotations) {
+		return r.k8sService.UpdatePodAnnotations(pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, desiredAnnotations)
 	}
 	return nil
 }

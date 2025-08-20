@@ -144,15 +144,8 @@ func (p *PodService) UpdatePodAnnotations(namespace, podName string, annotations
 		return err
 	}
 
-	// Initialize annotations map if it's nil
-	if pod.Annotations == nil {
-		pod.Annotations = make(map[string]string)
-	}
-
-	// Update the annotations (preserves existing ones, only updates provided ones)
-	for annotationKey, annotationValue := range annotations {
-		pod.Annotations[annotationKey] = annotationValue
-	}
+	// Replace annotations completely
+	pod.Annotations = annotations
 
 	// Update the pod
 	_, err = p.kubeClient.CoreV1().Pods(namespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
