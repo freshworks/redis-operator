@@ -1167,6 +1167,9 @@ func getRedisEnv(rf *redisfailoverv1.RedisFailover) []corev1.EnvVar {
 // generateRedisMasterAnnotations combines common pod annotations with master-specific annotations
 func generateRedisMasterAnnotations(rf *redisfailoverv1.RedisFailover) map[string]string {
 	annotations := maps.Clone(rf.Spec.Redis.PodAnnotations)
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
 	maps.Copy(annotations, rf.Spec.Redis.MasterPodAnnotations)
 	return annotations
 }
@@ -1174,6 +1177,9 @@ func generateRedisMasterAnnotations(rf *redisfailoverv1.RedisFailover) map[strin
 // generateRedisSlaveAnnotations combines common pod annotations with slave-specific annotations
 func generateRedisSlaveAnnotations(rf *redisfailoverv1.RedisFailover) map[string]string {
 	annotations := maps.Clone(rf.Spec.Redis.PodAnnotations)
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
 	maps.Copy(annotations, rf.Spec.Redis.SlavePodAnnotations)
 	return annotations
 }
