@@ -210,7 +210,7 @@ A comprehensive example showing all annotation types (pod and service, common an
 
 **Note**: These role-specific annotations are only available for Redis pods, not Sentinel pods.
 
-**⚠️ Important**: 
+**Important**: 
 - **Redis pod annotations** are managed exclusively by the operator. Any annotations manually added to Redis pods will be **replaced** during the next reconciliation cycle. All Redis pod annotations must be specified through the RedisFailover resource specification (`podAnnotations`, `masterPodAnnotations`, `slavePodAnnotations`) to persist.
 - **Sentinel pod annotations** are only set during Deployment creation/updates. Manual annotations added to existing Sentinel pods will persist until the next pod restart or Deployment update.
 
