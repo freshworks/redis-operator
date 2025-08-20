@@ -46,3 +46,30 @@ You can do the following commands with make:
   `make update-deps`
 - Build the app image.
   `make image`
+
+## Development Gotchas and Implementation Notes
+
+### Kubernetes Pod Annotations Update Strategy
+
+When implementing pod annotation updates in the operator, we discovered an important limitation with the Kubernetes PATCH operation:
+
+**Issue**: Using `kubectl patch` or client-go `Patch()` to add annotations fails when the pod has no existing annotations (i.e., when `metadata.annotations` is `nil` or empty).
+
+**Root Cause**: PATCH operations require the target field to exist. When a pod is created without annotations, the `metadata.annotations` field doesn't exist, causing PATCH to fail with errors like "field not found" or "invalid patch".
+
+**Solution**: Use `kubectl annotate` equivalent or client-go `Update()` with a full pod object instead of PATCH. This approach:
+- Fetches the complete pod object
+- Modifies the annotations map (creating it if necessary)
+- Performs a full update operation
+
+**Implementation**: In `service/k8s/pod.go`, the `UpdatePodAnnotations` method uses:
+```go
+// Fetch complete pod
+pod, err := p.client.CoreV1().Pods(namespace).Get(context.TODO(), podName, metav1.GetOptions{})
+// Modify annotations
+pod.Annotations = annotations  // This works even if annotations was nil
+// Update the full pod
+_, err = p.client.CoreV1().Pods(namespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
+```
+
+**Key Takeaway**: When working with Kubernetes resources that may not have certain fields initialized, prefer GET-modify-UPDATE pattern over PATCH operations for reliability.

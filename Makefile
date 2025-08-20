@@ -12,8 +12,18 @@ REPOSITORY := ghcr.io/$(IMAGE_NAME)
 # Shell to use for running scripts
 SHELL := $(shell which bash)
 
-# Get docker path or an empty string
+# Get podman path or docker path or an empty string
+PODMAN := $(shell command -v podman)
 DOCKER := $(shell command -v docker)
+
+# Use podman if available, otherwise use docker
+ifdef PODMAN
+    CONTAINER_RUNTIME := podman
+else ifdef DOCKER
+    CONTAINER_RUNTIME := docker
+else
+    CONTAINER_RUNTIME := 
+endif
 
 # Get the main unix group for the user running make (to be used by docker-compose later)
 GID := $(shell id -g)
@@ -46,7 +56,7 @@ PORT := 9710
 # CMDs
 UNIT_TEST_CMD := go test `go list ./... | grep -v /vendor/` -v
 GO_GENERATE_CMD := go generate `go list ./... | grep -v /vendor/`
-GO_INTEGRATION_TEST_CMD := go test `go list ./... | grep test/integration` -v -tags='integration'
+GO_INTEGRATION_TEST_CMD := go test `go list ./... | grep test/integration` -v -tags='integration' -timeout=20m
 GET_DEPS_CMD := dep ensure
 LINT_CMD := golangci-lint run --timeout=15m
 LINT_NEW_CMD := golangci-lint run --timeout=15m --new-from-rev=HEAD~1
@@ -67,7 +77,7 @@ default: build
 # Run the development environment in non-daemonized mode (foreground)
 .PHONY: docker-build
 docker-build: deps-development
-	docker build \
+	$(CONTAINER_RUNTIME) build \
 		--build-arg uid=$(UID) \
 		-t $(REPOSITORY)-dev:latest \
 		-t $(REPOSITORY)-dev:$(COMMIT) \
@@ -77,22 +87,22 @@ docker-build: deps-development
 # Run a shell into the development docker image
 .PHONY: shell
 shell: docker-build
-	docker run -ti --rm -v ~/.kube:/.kube:ro -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) -p $(PORT):$(PORT) $(REPOSITORY)-dev /bin/bash
+	$(CONTAINER_RUNTIME) run -ti --rm -v ~/.kube:/.kube:ro -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) -p $(PORT):$(PORT) $(REPOSITORY)-dev /bin/bash
 
 # Build redis-failover executable file
 .PHONY: build
 build: docker-build
-	docker run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev ./scripts/build.sh
+	$(CONTAINER_RUNTIME) run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev ./scripts/build.sh
 
 # Run the development environment in the background
 .PHONY: run
 run: docker-build
-	docker run -ti --rm -v ~/.kube:/.kube:ro -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) -p $(PORT):$(PORT) $(REPOSITORY)-dev ./scripts/run.sh
+	$(CONTAINER_RUNTIME) run -ti --rm -v ~/.kube:/.kube:ro -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) -p $(PORT):$(PORT) $(REPOSITORY)-dev ./scripts/run.sh
 
 # Build the production image based on the public one
 .PHONY: image
 image: deps-development
-	docker build \
+	$(CONTAINER_RUNTIME) build \
 	-t $(SERVICE_NAME) \
 	-t $(REPOSITORY):latest \
 	-t $(REPOSITORY):$(COMMIT) \
@@ -102,7 +112,21 @@ image: deps-development
 
 .PHONY: image-release
 image-release:
-	docker buildx build \
+ifeq ($(CONTAINER_RUNTIME),podman)
+	@echo "Multi-platform builds with podman require manifest commands."
+	@echo "Building for current platform only. For full multi-platform support, use docker buildx."
+	$(CONTAINER_RUNTIME) build \
+	--build-arg VERSION=$(TAG) \
+	-t $(REPOSITORY):latest \
+	-t $(REPOSITORY):$(COMMIT) \
+	-t $(REPOSITORY):$(TAG) \
+	-f $(APP_DIR)/Dockerfile \
+	.
+	$(CONTAINER_RUNTIME) push $(REPOSITORY):latest
+	$(CONTAINER_RUNTIME) push $(REPOSITORY):$(COMMIT)
+	$(CONTAINER_RUNTIME) push $(REPOSITORY):$(TAG)
+else
+	$(CONTAINER_RUNTIME) buildx build \
 	--platform linux/amd64,linux/arm64,linux/arm/v7 \
 	--push \
 	--build-arg VERSION=$(TAG) \
@@ -111,10 +135,11 @@ image-release:
 	-t $(REPOSITORY):$(TAG) \
 	-f $(APP_DIR)/Dockerfile \
 	.
+endif
 
 .PHONY: testing
 testing: image
-	docker push $(REPOSITORY):$(BRANCH)
+	$(CONTAINER_RUNTIME) push $(REPOSITORY):$(BRANCH)
 
 .PHONY: tag
 tag:
@@ -123,9 +148,9 @@ tag:
 .PHONY: publish
 publish:
 	@COMMIT_VERSION="$$(git rev-list -n 1 $(VERSION))"; \
-	docker tag $(REPOSITORY):"$$COMMIT_VERSION" $(REPOSITORY):$(VERSION)
-	docker push $(REPOSITORY):$(VERSION)
-	docker push $(REPOSITORY):latest
+	$(CONTAINER_RUNTIME) tag $(REPOSITORY):"$$COMMIT_VERSION" $(REPOSITORY):$(VERSION)
+	$(CONTAINER_RUNTIME) push $(REPOSITORY):$(VERSION)
+	$(CONTAINER_RUNTIME) push $(REPOSITORY):latest
 
 .PHONY: release
 release: tag image-release
@@ -133,7 +158,7 @@ release: tag image-release
 # Test stuff in dev
 .PHONY: unit-test
 unit-test: docker-build
-	docker run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(UNIT_TEST_CMD)'
+	$(CONTAINER_RUNTIME) run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(UNIT_TEST_CMD)'
 
 .PHONY: ci-unit-test
 ci-unit-test:
@@ -157,11 +182,11 @@ test: ci-lint ci-unit-test ci-integration-test helm-test
 
 .PHONY: lint
 lint: docker-build
-	docker run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(LINT_CMD)'
+	$(CONTAINER_RUNTIME) run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(LINT_CMD)'
 
 .PHONY: new-lint
 new-lint: docker-build
-	docker run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(LINT_NEW_CMD)'
+	$(CONTAINER_RUNTIME) run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(LINT_NEW_CMD)'
 
 .PHONY: ci-lint
 ci-lint:
@@ -173,36 +198,38 @@ ci-new-lint:
 
 .PHONY: go-generate
 go-generate: docker-build
-	docker run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(GO_GENERATE_CMD)'
+	$(CONTAINER_RUNTIME) run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(GO_GENERATE_CMD)'
 
 .PHONY: generate
 generate: go-generate
 
 .PHONY: get-deps
 get-deps: docker-build
-	docker run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(GET_DEPS_CMD)'
+	$(CONTAINER_RUNTIME) run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(GET_DEPS_CMD)'
 
 .PHONY: update-deps
 update-deps: docker-build
-	docker run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(UPDATE_DEPS_CMD)'
+	$(CONTAINER_RUNTIME) run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(UPDATE_DEPS_CMD)'
 
 .PHONY: mocks
 mocks: docker-build
-	docker run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(MOCKS_CMD)'
+	$(CONTAINER_RUNTIME) run -ti --rm -v $(PWD):$(WORKDIR) -u $(UID):$(UID) --name $(SERVICE_NAME) $(REPOSITORY)-dev /bin/sh -c '$(MOCKS_CMD)'
 
 .PHONY: deps-development
 # Test if the dependencies we need to run this Makefile are installed
 deps-development:
-ifndef DOCKER
-	@echo "Docker is not available. Please install docker"
+ifeq ($(CONTAINER_RUNTIME),)
+	@echo "Neither podman nor docker is available. Please install podman or docker"
 	@exit 1
+else
+	@echo "Using container runtime: $(CONTAINER_RUNTIME)"
 endif
 
 # Generate kubernetes code for types..
 .PHONY: update-codegen
 update-codegen:
 	@echo ">> Generating code for Kubernetes CRD types..."
-	docker run --rm -it \
+	$(CONTAINER_RUNTIME) run --rm -it \
 	-v $(PWD):/app \
 	-e KUBE_CODE_GENERATOR_GO_GEN_OUT=./client/k8s \
 	-e KUBE_CODE_GENERATOR_APIS_IN=./api \
@@ -212,7 +239,7 @@ update-codegen:
 
 generate-crd:
 	@echo ">> Generating CRD..."
-	docker run --rm -it \
+	$(CONTAINER_RUNTIME) run --rm -it \
 	-v $(PWD):/app \
 	-e KUBE_CODE_GENERATOR_APIS_IN=./api \
 	-e KUBE_CODE_GENERATOR_CRD_GEN_OUT=./manifests \

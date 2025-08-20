@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"maps"
 	"sort"
 	"strconv"
 
@@ -61,6 +62,14 @@ func (r *RedisFailoverHealer) setSlaveLabelIfNecessary(namespace string, pod v1.
 	return r.k8sService.UpdatePodLabels(namespace, pod.ObjectMeta.Name, generateRedisSlaveRoleLabel())
 }
 
+// updatePodAnnotationsIfNecessary updates pod annotations only if they differ
+func (r *RedisFailoverHealer) updatePodAnnotationsIfNecessary(pod v1.Pod, desiredAnnotations map[string]string) error {
+	if !maps.Equal(pod.ObjectMeta.Annotations, desiredAnnotations) {
+		return r.k8sService.UpdatePodAnnotations(pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, desiredAnnotations)
+	}
+	return nil
+}
+
 func (r *RedisFailoverHealer) MakeMaster(ip string, rf *redisfailoverv1.RedisFailover) error {
 	password, err := k8s.GetRedisPassword(r.k8sService, rf)
 	if err != nil {
@@ -79,7 +88,12 @@ func (r *RedisFailoverHealer) MakeMaster(ip string, rf *redisfailoverv1.RedisFai
 	}
 	for _, rp := range rps.Items {
 		if rp.Status.PodIP == ip {
-			return r.setMasterLabelIfNecessary(rf.Namespace, rp)
+			err := r.setMasterLabelIfNecessary(rf.Namespace, rp)
+			if err != nil {
+				return err
+			}
+			podAnnotations := generateRedisMasterAnnotations(rf)
+			return r.updatePodAnnotationsIfNecessary(rp, podAnnotations)
 		}
 	}
 	return nil
@@ -108,6 +122,7 @@ func (r *RedisFailoverHealer) SetOldestAsMaster(rf *redisfailoverv1.RedisFailove
 	port := getRedisPort(rf.Spec.Redis.Port)
 	newMasterIP := ""
 	for _, pod := range ssp.Items {
+		var podAnnotations map[string]string
 		if newMasterIP == "" {
 			newMasterIP = pod.Status.PodIP
 			r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("namespace", rf.ObjectMeta.Namespace).Infof("New master is %s with ip %s", pod.Name, newMasterIP)
@@ -122,6 +137,7 @@ func (r *RedisFailoverHealer) SetOldestAsMaster(rf *redisfailoverv1.RedisFailove
 				return err
 			}
 
+			podAnnotations = generateRedisMasterAnnotations(rf)
 			newMasterIP = pod.Status.PodIP
 		} else {
 			r.logger.Infof("Making pod %s slave of %s", pod.Name, newMasterIP)
@@ -133,6 +149,12 @@ func (r *RedisFailoverHealer) SetOldestAsMaster(rf *redisfailoverv1.RedisFailove
 			if err != nil {
 				return err
 			}
+
+			podAnnotations = generateRedisSlaveAnnotations(rf)
+		}
+		err = r.updatePodAnnotationsIfNecessary(pod, podAnnotations)
+		if err != nil {
+			return err
 		}
 	}
 	if newMasterIP == "" {
@@ -172,6 +194,12 @@ func (r *RedisFailoverHealer) SetMasterOnAll(masterIP string, rf *redisfailoverv
 			}
 
 			err = r.setSlaveLabelIfNecessary(rf.Namespace, pod)
+			if err != nil {
+				return err
+			}
+
+			podAnnotations := generateRedisSlaveAnnotations(rf)
+			err = r.updatePodAnnotationsIfNecessary(pod, podAnnotations)
 			if err != nil {
 				return err
 			}
