@@ -84,22 +84,34 @@ func (r *RedisFailoverChecker) CheckSentinelNumber(rf *redisfailoverv1.RedisFail
 	return nil
 }
 
-func (r *RedisFailoverChecker) setMasterLabelIfNecessary(namespace string, pod corev1.Pod) error {
+func (r *RedisFailoverChecker) setMasterLabelIfNecessary(pod corev1.Pod) error {
 	for labelKey, labelValue := range pod.Labels {
 		if labelKey == redisRoleLabelKey && labelValue == redisRoleLabelMaster {
 			return nil
 		}
 	}
-	return r.k8sService.UpdatePodLabels(namespace, pod.Name, generateRedisMasterRoleLabel())
+	return r.k8sService.UpdatePodLabels(pod.Namespace, pod.Name, generateRedisMasterRoleLabel())
 }
 
-func (r *RedisFailoverChecker) setSlaveLabelIfNecessary(namespace string, pod corev1.Pod) error {
+func (r *RedisFailoverChecker) setSlaveLabelIfNecessary(pod corev1.Pod) error {
 	for labelKey, labelValue := range pod.Labels {
 		if labelKey == redisRoleLabelKey && labelValue == redisRoleLabelSlave {
 			return nil
 		}
 	}
-	return r.k8sService.UpdatePodLabels(namespace, pod.Name, generateRedisSlaveRoleLabel())
+	return r.k8sService.UpdatePodLabels(pod.Namespace, pod.Name, generateRedisSlaveRoleLabel())
+}
+
+// updatePodAnnotationsIfNecessary updates pod annotations only if our managed annotations differ
+func (r *RedisFailoverChecker) updatePodAnnotationsIfNecessary(pod corev1.Pod, desiredAnnotations map[string]string) error {
+	// Check if any of our managed annotations need updating
+	for key, desiredValue := range desiredAnnotations {
+		if currentValue, exists := pod.Annotations[key]; !exists || currentValue != desiredValue {
+			// Something needs updating, delegate to the update function which handles merging
+			return r.k8sService.UpdatePodAnnotations(pod.Namespace, pod.Name, desiredAnnotations)
+		}
+	}
+	return nil
 }
 
 // CheckAllSlavesFromMaster controlls that all slaves have the same master (the real one)
@@ -118,19 +130,19 @@ func (r *RedisFailoverChecker) CheckAllSlavesFromMaster(master string, rf *redis
 	for _, rp := range rps.Items {
 		var podAnnotations map[string]string
 		if rp.Status.PodIP == master {
-			err = r.setMasterLabelIfNecessary(rf.Namespace, rp)
+			err = r.setMasterLabelIfNecessary(rp)
 			if err != nil {
 				return err
 			}
 			podAnnotations = generateRedisMasterAnnotations(rf)
 		} else {
-			err = r.setSlaveLabelIfNecessary(rf.Namespace, rp)
+			err = r.setSlaveLabelIfNecessary(rp)
 			if err != nil {
 				return err
 			}
 			podAnnotations = generateRedisSlaveAnnotations(rf)
 		}
-		err = r.k8sService.UpdatePodAnnotations(rf.Namespace, rp.Name, podAnnotations)
+		err = r.updatePodAnnotationsIfNecessary(rp, podAnnotations)
 		if err != nil {
 			return err
 		}

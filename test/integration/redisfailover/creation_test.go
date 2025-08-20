@@ -547,7 +547,10 @@ func (c *clients) testMasterSlavePodAnnotations(t *testing.T, currentNamespace s
 	rf, err := c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Get(context.Background(), name, metav1.GetOptions{})
 	require.NoError(err)
 
-	// Add master/slave pod annotations
+	// Add master/slave pod annotations (now applied dynamically, no StatefulSet restart)
+	rf.Spec.Redis.PodAnnotations = map[string]string{
+		"common": "value",
+	}
 	rf.Spec.Redis.MasterPodAnnotations = map[string]string{
 		"role": "master",
 	}
@@ -577,9 +580,11 @@ func (c *clients) testMasterSlavePodAnnotations(t *testing.T, currentNamespace s
 	for _, pod := range redisPods.Items {
 		if pod.Labels["redisfailovers-role"] == "master" {
 			masterFound = true
+			assert.Equal("value", pod.Annotations["common"], "Master should have common annotation")
 			assert.Equal("master", pod.Annotations["role"], "Master should have master role annotation")
 		} else if pod.Labels["redisfailovers-role"] == "slave" {
 			slaveFound = true
+			assert.Equal("value", pod.Annotations["common"], "Slave should have common annotation")
 			assert.Equal("slave", pod.Annotations["role"], "Slave should have slave role annotation")
 		}
 	}
@@ -589,6 +594,7 @@ func (c *clients) testMasterSlavePodAnnotations(t *testing.T, currentNamespace s
 	// Remove annotations
 	rf, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Get(context.Background(), name, metav1.GetOptions{})
 	require.NoError(err)
+	rf.Spec.Redis.PodAnnotations = nil
 	rf.Spec.Redis.MasterPodAnnotations = nil
 	rf.Spec.Redis.SlavePodAnnotations = nil
 	_, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Update(context.Background(), rf, metav1.UpdateOptions{})
@@ -602,7 +608,9 @@ func (c *clients) testMasterSlavePodAnnotations(t *testing.T, currentNamespace s
 	assert.NoError(err)
 
 	for _, pod := range redisPods.Items {
+		_, hasCommon := pod.Annotations["common"]
 		_, hasRole := pod.Annotations["role"]
+		assert.False(hasCommon, "Pod %s should not have common annotation after removal", pod.Name)
 		assert.False(hasRole, "Pod %s should not have role annotation after removal", pod.Name)
 	}
 }

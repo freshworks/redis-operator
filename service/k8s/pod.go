@@ -144,10 +144,12 @@ func (p *PodService) UpdatePodAnnotations(namespace, podName string, annotations
 		return err
 	}
 
-	// Clear existing annotations and initialize if nil
-	pod.Annotations = make(map[string]string)
+	// Initialize annotations map if it's nil
+	if pod.Annotations == nil {
+		pod.Annotations = make(map[string]string)
+	}
 
-	// Add the new annotations
+	// Update the annotations (preserves existing ones, only updates provided ones)
 	for annotationKey, annotationValue := range annotations {
 		pod.Annotations[annotationKey] = annotationValue
 	}

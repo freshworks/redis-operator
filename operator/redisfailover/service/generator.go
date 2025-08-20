@@ -375,8 +375,9 @@ func generateRedisStatefulSet(rf *redisfailoverv1.RedisFailover, labels map[stri
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      labels,
-					Annotations: rf.Spec.Redis.PodAnnotations,
+					Labels: labels,
+					// Note: podAnnotations are applied dynamically via UpdatePodAnnotations in check/heal logic
+					// to avoid triggering StatefulSet template changes and pod recreation
 				},
 				Spec: corev1.PodSpec{
 					Affinity:                      getAffinity(rf.Spec.Redis.Affinity, labels),

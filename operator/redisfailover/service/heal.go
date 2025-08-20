@@ -61,6 +61,18 @@ func (r *RedisFailoverHealer) setSlaveLabelIfNecessary(namespace string, pod v1.
 	return r.k8sService.UpdatePodLabels(namespace, pod.ObjectMeta.Name, generateRedisSlaveRoleLabel())
 }
 
+// updatePodAnnotationsIfNecessary updates pod annotations only if our managed annotations differ
+func (r *RedisFailoverHealer) updatePodAnnotationsIfNecessary(pod v1.Pod, desiredAnnotations map[string]string) error {
+	// Check if any of our managed annotations need updating
+	for key, desiredValue := range desiredAnnotations {
+		if currentValue, exists := pod.ObjectMeta.Annotations[key]; !exists || currentValue != desiredValue {
+			// Something needs updating, delegate to the update function which handles merging
+			return r.k8sService.UpdatePodAnnotations(pod.ObjectMeta.Namespace, pod.ObjectMeta.Name, desiredAnnotations)
+		}
+	}
+	return nil
+}
+
 func (r *RedisFailoverHealer) MakeMaster(ip string, rf *redisfailoverv1.RedisFailover) error {
 	password, err := k8s.GetRedisPassword(r.k8sService, rf)
 	if err != nil {
@@ -84,7 +96,7 @@ func (r *RedisFailoverHealer) MakeMaster(ip string, rf *redisfailoverv1.RedisFai
 				return err
 			}
 			podAnnotations := generateRedisMasterAnnotations(rf)
-			return r.k8sService.UpdatePodAnnotations(rf.Namespace, rp.ObjectMeta.Name, podAnnotations)
+			return r.updatePodAnnotationsIfNecessary(rp, podAnnotations)
 		}
 	}
 	return nil
@@ -143,7 +155,7 @@ func (r *RedisFailoverHealer) SetOldestAsMaster(rf *redisfailoverv1.RedisFailove
 
 			podAnnotations = generateRedisSlaveAnnotations(rf)
 		}
-		err = r.k8sService.UpdatePodAnnotations(rf.Namespace, pod.Name, podAnnotations)
+		err = r.updatePodAnnotationsIfNecessary(pod, podAnnotations)
 		if err != nil {
 			return err
 		}
@@ -190,7 +202,7 @@ func (r *RedisFailoverHealer) SetMasterOnAll(masterIP string, rf *redisfailoverv
 			}
 
 			podAnnotations := generateRedisSlaveAnnotations(rf)
-			err = r.k8sService.UpdatePodAnnotations(rf.Namespace, pod.Name, podAnnotations)
+			err = r.updatePodAnnotationsIfNecessary(pod, podAnnotations)
 			if err != nil {
 				return err
 			}
