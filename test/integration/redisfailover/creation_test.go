@@ -192,15 +192,16 @@ func TestRedisFailover(t *testing.T) {
 		clients.testSentinelMonitoring(t, currentNamespace, disableMyMaster)
 	})
 
+	// Check that master/slave pod annotations work as expected
+	t.Run("Check Master/Slave Pod Annotations", func(t *testing.T) {
+		clients.testMasterSlavePodAnnotations(t, currentNamespace)
+	})
+
 	// Check that skip reconcile annotation works as expected
 	t.Run("Check Skip Reconcile annotation", func(t *testing.T) {
 		clients.testSkipReconcile(t, currentNamespace)
 	})
 
-	// Check that master/slave pod annotations work as expected
-	t.Run("Check Master/Slave Pod Annotations", func(t *testing.T) {
-		clients.testMasterSlavePodAnnotations(t, currentNamespace)
-	})
 }
 
 func TestRedisFailoverMyMaster(t *testing.T) {
