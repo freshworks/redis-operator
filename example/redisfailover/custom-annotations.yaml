@@ -1,17 +1,42 @@
+# REDIS pod annotations are managed exclusively by the operator.
+# Any annotations manually added to Redis pods will be replaced during reconciliation.
+# SENTINEL pod annotations are only set during deployment creation/updates.
+# All annotations should be specified here for consistency.
 apiVersion: databases.spotahome.com/v1
 kind: RedisFailover
 metadata:
-  name: redisfailover
+  name: redis-with-annotations
 spec:
   sentinel:
     replicas: 3
+    # Annotations for Sentinel pods
     podAnnotations:
-      imageregistry: "https://hub.docker.com/"
+      monitoring/scrape: "true"
+      environment: "production"
+    # Annotations for Sentinel services
     serviceAnnotations:
       imageregistry: "https://hub.docker.com/"
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
   redis:
     replicas: 3
+    # Common annotations applied to ALL Redis pods
     podAnnotations:
-      imageregistry: "https://hub.docker.com/"
+      monitoring/scrape: "true"
+      environment: "production"
+      team: "platform"
+    # Annotations applied ONLY to master pods (in addition to common annotations)
+    masterPodAnnotations:
+      role: "master"
+      priority: "high"
+      backup/enabled: "true"
+      alert/critical: "true"
+    # Annotations applied ONLY to slave pods (in addition to common annotations)
+    slavePodAnnotations:
+      role: "slave"
+      priority: "normal"
+      read-only: "true"
+      cache/enabled: "true"
+    # Annotations for Redis services
     serviceAnnotations:
       imageregistry: "https://hub.docker.com/"
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
