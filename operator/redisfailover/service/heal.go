@@ -84,10 +84,7 @@ func (r *RedisFailoverHealer) MakeMaster(ip string, rf *redisfailoverv1.RedisFai
 				return err
 			}
 			podAnnotations := generateRedisMasterAnnotations(rf)
-			if len(podAnnotations) > 0 {
-				return r.k8sService.UpdatePodAnnotations(rf.Namespace, rp.ObjectMeta.Name, podAnnotations)
-			}
-			return nil
+			return r.k8sService.UpdatePodAnnotations(rf.Namespace, rp.ObjectMeta.Name, podAnnotations)
 		}
 	}
 	return nil
@@ -146,11 +143,9 @@ func (r *RedisFailoverHealer) SetOldestAsMaster(rf *redisfailoverv1.RedisFailove
 
 			podAnnotations = generateRedisSlaveAnnotations(rf)
 		}
-		if len(podAnnotations) > 0 {
-			err = r.k8sService.UpdatePodAnnotations(rf.Namespace, pod.Name, podAnnotations)
-			if err != nil {
-				return err
-			}
+		err = r.k8sService.UpdatePodAnnotations(rf.Namespace, pod.Name, podAnnotations)
+		if err != nil {
+			return err
 		}
 	}
 	if newMasterIP == "" {
@@ -195,11 +190,9 @@ func (r *RedisFailoverHealer) SetMasterOnAll(masterIP string, rf *redisfailoverv
 			}
 
 			podAnnotations := generateRedisSlaveAnnotations(rf)
-			if len(podAnnotations) > 0 {
-				err = r.k8sService.UpdatePodAnnotations(rf.Namespace, pod.Name, podAnnotations)
-				if err != nil {
-					return err
-				}
+			err = r.k8sService.UpdatePodAnnotations(rf.Namespace, pod.Name, podAnnotations)
+			if err != nil {
+				return err
 			}
 		}
 	}

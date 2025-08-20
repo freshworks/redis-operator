@@ -130,11 +130,9 @@ func (r *RedisFailoverChecker) CheckAllSlavesFromMaster(master string, rf *redis
 			}
 			podAnnotations = generateRedisSlaveAnnotations(rf)
 		}
-		if len(podAnnotations) > 0 {
-			err = r.k8sService.UpdatePodAnnotations(rf.Namespace, rp.Name, podAnnotations)
-			if err != nil {
-				return err
-			}
+		err = r.k8sService.UpdatePodAnnotations(rf.Namespace, rp.Name, podAnnotations)
+		if err != nil {
+			return err
 		}
 
 		slave, err := r.redisClient.GetSlaveOf(rp.Status.PodIP, rport, password)
