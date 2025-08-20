@@ -548,9 +548,6 @@ func (c *clients) testMasterSlavePodAnnotations(t *testing.T, currentNamespace s
 	require.NoError(err)
 
 	// Add master/slave pod annotations
-	rf.Spec.Redis.PodAnnotations = map[string]string{
-		"common": "value",
-	}
 	rf.Spec.Redis.MasterPodAnnotations = map[string]string{
 		"role": "master",
 	}
@@ -594,7 +591,6 @@ func (c *clients) testMasterSlavePodAnnotations(t *testing.T, currentNamespace s
 	// Remove annotations
 	rf, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Get(context.Background(), name, metav1.GetOptions{})
 	require.NoError(err)
-	rf.Spec.Redis.PodAnnotations = nil
 	rf.Spec.Redis.MasterPodAnnotations = nil
 	rf.Spec.Redis.SlavePodAnnotations = nil
 	_, err = c.rfClient.DatabasesV1().RedisFailovers(currentNamespace).Update(context.Background(), rf, metav1.UpdateOptions{})
