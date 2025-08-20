@@ -25,6 +25,10 @@ func TestSetOldestAsMasterNewMasterError(t *testing.T) {
 	pods := &corev1.PodList{
 		Items: []corev1.Pod{
 			{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      "test-pod-0",
+				},
 				Status: corev1.PodStatus{
 					PodIP: "0.0.0.0",
 				},
@@ -53,6 +57,10 @@ func TestSetOldestAsMaster(t *testing.T) {
 	pods := &corev1.PodList{
 		Items: []corev1.Pod{
 			{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      "test-pod-0",
+				},
 				Status: corev1.PodStatus{
 					PodIP: "0.0.0.0",
 				},
@@ -81,6 +89,10 @@ func TestSetOldestAsMasterMultiplePodsMakeSlaveOfError(t *testing.T) {
 	pods := &corev1.PodList{
 		Items: []corev1.Pod{
 			{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      "test-pod-0",
+				},
 				Status: corev1.PodStatus{
 					PodIP: "0.0.0.0",
 				},
@@ -115,6 +127,10 @@ func TestSetOldestAsMasterMultiplePods(t *testing.T) {
 	pods := &corev1.PodList{
 		Items: []corev1.Pod{
 			{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      "test-pod-0",
+				},
 				Status: corev1.PodStatus{
 					PodIP: "0.0.0.0",
 				},
@@ -193,6 +209,10 @@ func TestSetMasterOnAllMakeMasterError(t *testing.T) {
 	pods := &corev1.PodList{
 		Items: []corev1.Pod{
 			{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      "test-pod-0",
+				},
 				Status: corev1.PodStatus{
 					PodIP: "0.0.0.0",
 				},
@@ -225,6 +245,10 @@ func TestSetMasterOnAllMakeSlaveOfError(t *testing.T) {
 	pods := &corev1.PodList{
 		Items: []corev1.Pod{
 			{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      "test-pod-0",
+				},
 				Status: corev1.PodStatus{
 					PodIP: "0.0.0.0",
 				},
@@ -259,6 +283,10 @@ func TestSetMasterOnAll(t *testing.T) {
 	pods := &corev1.PodList{
 		Items: []corev1.Pod{
 			{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      "test-pod-0",
+				},
 				Status: corev1.PodStatus{
 					PodIP: "0.0.0.0",
 				},

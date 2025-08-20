@@ -195,6 +195,10 @@ func TestCheckAllSlavesFromMasterGetSlaveOfError(t *testing.T) {
 	pods := &corev1.PodList{
 		Items: []corev1.Pod{
 			{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      "test-pod",
+				},
 				Status: corev1.PodStatus{
 					PodIP: "",
 					Phase: corev1.PodRunning,
@@ -224,6 +228,10 @@ func TestCheckAllSlavesFromMasterDifferentMaster(t *testing.T) {
 	pods := &corev1.PodList{
 		Items: []corev1.Pod{
 			{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      "test-pod",
+				},
 				Status: corev1.PodStatus{
 					PodIP: "0.0.0.0",
 					Phase: corev1.PodRunning,
@@ -253,6 +261,10 @@ func TestCheckAllSlavesFromMaster(t *testing.T) {
 	pods := &corev1.PodList{
 		Items: []corev1.Pod{
 			{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      "test-pod",
+				},
 				Status: corev1.PodStatus{
 					PodIP: "0.0.0.0",
 					Phase: corev1.PodRunning,
