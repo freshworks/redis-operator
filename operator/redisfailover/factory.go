@@ -74,37 +74,77 @@ func NewRedisFailoverRetriever(cfg Config, cli k8s.Services) controller.Retrieve
 		rfOperatorGroupKey: cfg.OperatorGroupID,
 	}).String()
 
-	return controller.MustRetrieverFromListerWatcher(&cache.ListWatch{
+	lw := &cache.ListWatch{
 		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-			options.LabelSelector = groupSelector
-			rfList, err := cli.ListRedisFailovers(context.Background(), "", options)
-			if err != nil {
-				return rfList, err
-			}
-
-			targetRFList := make([]redisfailoverv1.RedisFailover, 0)
-			for _, rf := range rfList.Items {
-				if isNamespaceSupported(rf) {
-					targetRFList = append(targetRFList, rf)
-				}
-			}
-			rfList.Items = targetRFList
-
-			return rfList, err
+			return listRedisFailoversWithNamespaceFilter(context.Background(), cli, groupSelector, options, isNamespaceSupported)
+		},
+		ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
+			return listRedisFailoversWithNamespaceFilter(ctx, cli, groupSelector, options, isNamespaceSupported)
 		},
 		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-			options.LabelSelector = groupSelector
-			watcher, err := cli.WatchRedisFailovers(context.Background(), "", options)
-			watcher = watch.Filter(watcher, func(event watch.Event) (watch.Event, bool) {
-				rf, ok := event.Object.(*redisfailoverv1.RedisFailover)
-				if !ok {
-					return event, false
-				}
-				return event, isNamespaceSupported(*rf)
-			})
-			return watcher, err
+			return watchRedisFailoversWithNamespaceFilter(context.Background(), cli, groupSelector, options, isNamespaceSupported)
 		},
-	})
+		WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+			return watchRedisFailoversWithNamespaceFilter(ctx, cli, groupSelector, options, isNamespaceSupported)
+		},
+	}
+	return controller.MustRetrieverFromListerWatcher(&redisFailoverListerWatcher{ListWatch: lw})
+}
+
+// redisFailoverListerWatcher wraps ListWatch and opts out of client-go WatchList semantics
+// (SendInitialEvents), which custom CRD watches and older apiservers may not support.
+// Recognized by client-go v0.35+ reflectors via IsWatchListSemanticsUnSupported.
+type redisFailoverListerWatcher struct {
+	*cache.ListWatch
+}
+
+func (redisFailoverListerWatcher) IsWatchListSemanticsUnSupported() bool {
+	return true
+}
+
+func listRedisFailoversWithNamespaceFilter(
+	ctx context.Context,
+	cli k8s.Services,
+	groupSelector string,
+	options metav1.ListOptions,
+	isNamespaceSupported func(redisfailoverv1.RedisFailover) bool,
+) (runtime.Object, error) {
+	options.LabelSelector = groupSelector
+	rfList, err := cli.ListRedisFailovers(ctx, "", options)
+	if err != nil {
+		return rfList, err
+	}
+
+	targetRFList := make([]redisfailoverv1.RedisFailover, 0)
+	for _, rf := range rfList.Items {
+		if isNamespaceSupported(rf) {
+			targetRFList = append(targetRFList, rf)
+		}
+	}
+	rfList.Items = targetRFList
+
+	return rfList, nil
+}
+
+func watchRedisFailoversWithNamespaceFilter(
+	ctx context.Context,
+	cli k8s.Services,
+	groupSelector string,
+	options metav1.ListOptions,
+	isNamespaceSupported func(redisfailoverv1.RedisFailover) bool,
+) (watch.Interface, error) {
+	options.LabelSelector = groupSelector
+	watcher, err := cli.WatchRedisFailovers(ctx, "", options)
+	if err != nil {
+		return nil, err
+	}
+	return watch.Filter(watcher, func(event watch.Event) (watch.Event, bool) {
+		rf, ok := event.Object.(*redisfailoverv1.RedisFailover)
+		if !ok {
+			return event, false
+		}
+		return event, isNamespaceSupported(*rf)
+	}), nil
 }
 
 type kooperlogger struct {
