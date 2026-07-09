@@ -76,7 +76,7 @@ supported versions.
 
 ## Go toolchain (stdlib fixes)
 
-The module declares **`go 1.26.4`** in [`go.mod`](go.mod). CI uses
+The module declares **`go 1.26.5`** in [`go.mod`](go.mod). CI uses
 **`go-version-file: go.mod`** (`actions/setup-go`), so CI and contributors should
 build with that same Go release. Run **`make ci-govulncheck`** after upgrades; some
 advisories also require bumping dependencies (for example **`golang.org/x/net`**),

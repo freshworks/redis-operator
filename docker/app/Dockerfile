@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.26.4-trixie AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.5-trixie AS build
 # Debian trixie (testing) — matches distroless static-debian13 runtime
 
 WORKDIR /src
