@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	rediscli "github.com/go-redis/redis/v8"
 	"github.com/freshworks/redis-operator/log"
 	"github.com/freshworks/redis-operator/metrics"
+	rediscli "github.com/go-redis/redis/v8"
 )
 
 // Client defines the functions neccesary to connect to redis and sentinel to get or set what we nned
@@ -162,7 +162,6 @@ func (c *client) ResetSentinel(ip string) error {
 
 // GetSlaveOf returns the master of the given redis, or nil if it's master
 func (c *client) GetSlaveOf(ip, port, password string) (string, error) {
-
 	options := &rediscli.Options{
 		Addr:     net.JoinHostPort(ip, port),
 		Password: password,

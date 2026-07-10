@@ -155,8 +155,12 @@ func (r *RedisFailoverChecker) CheckAllSlavesFromMaster(master string, rf *redis
 	}
 
 	rport := getRedisPort(rf.Spec.Redis.Port)
+	var connectivityErrors []error
+
+	// This ensures labels are always updated regardless of Redis connectivity issues
 	for _, rp := range rps.Items {
 		if rp.Status.PodIP == master {
+			r.logger.Infof("Update pod label, namespace: %s, pod name: %s, labels: %v", rf.Namespace, rp.Name, generateRedisMasterRoleLabel())
 			err = r.setMasterLabelIfNecessary(rf.Namespace, rp)
 			if err != nil {
 				return err
@@ -166,6 +170,7 @@ func (r *RedisFailoverChecker) CheckAllSlavesFromMaster(master string, rf *redis
 				return err
 			}
 		} else {
+			r.logger.Infof("Update pod label, namespace: %s, pod name: %s, labels: %v", rf.Namespace, rp.Name, generateRedisSlaveRoleLabel())
 			err = r.setSlaveLabelIfNecessary(rf.Namespace, rp)
 			if err != nil {
 				return err
@@ -175,16 +180,34 @@ func (r *RedisFailoverChecker) CheckAllSlavesFromMaster(master string, rf *redis
 				return err
 			}
 		}
+	}
 
+	// If any Redis instance is unresponsive, we log the error but don't fail the entire operation
+	for _, rp := range rps.Items {
 		slave, err := r.redisClient.GetSlaveOf(rp.Status.PodIP, rport, password)
 		if err != nil {
 			r.logger.Errorf("Get slave of master failed, maybe this node is not ready, pod ip: %s", rp.Status.PodIP)
-			return err
+			connectivityErrors = append(connectivityErrors, err)
+			continue // Continue checking other pods instead of failing immediately
 		}
 		if slave != "" && slave != master {
 			return fmt.Errorf("slave %s don't have the master %s, has %s", rp.Status.PodIP, master, slave)
 		}
 	}
+
+	// If ALL pods had connectivity errors, return an error
+	// This preserves the original behavior when all pods are unresponsive
+	if len(connectivityErrors) == len(rps.Items) && len(rps.Items) > 0 {
+		r.logger.Errorf("All Redis instances were unresponsive during replication check")
+		return connectivityErrors[0] // Return the first error
+	}
+
+	// If we had some connectivity errors but labels were updated successfully,
+	// log a warning but allow the healing process to continue
+	if len(connectivityErrors) > 0 {
+		r.logger.Warningf("Some Redis instances were unresponsive during replication check, but pod labels were updated successfully. Connectivity errors: %d", len(connectivityErrors))
+	}
+
 	return nil
 }
 
@@ -324,16 +347,23 @@ func (r *RedisFailoverChecker) GetMasterIP(rf *redisfailoverv1.RedisFailover) (s
 	}
 
 	masters := []string{}
+	connectivityErrors := 0
 	rport := getRedisPort(rf.Spec.Redis.Port)
 	for _, rip := range rips {
 		master, err := r.redisClient.IsMaster(rip, rport, password)
 		if err != nil {
 			r.logger.Errorf("Get redis info failed, maybe this node is not ready, pod ip: %s", rip)
+			connectivityErrors++
 			continue
 		}
 		if master {
 			masters = append(masters, rip)
 		}
+	}
+
+	// If all nodes are unresponsive, return an error
+	if connectivityErrors == len(rips) {
+		return "", errors.New("all redis nodes are unresponsive")
 	}
 
 	if len(masters) != 1 {
@@ -357,17 +387,25 @@ func (r *RedisFailoverChecker) GetNumberMasters(rf *redisfailoverv1.RedisFailove
 		return nMasters, err
 	}
 
+	connectivityErrors := 0
 	rport := getRedisPort(rf.Spec.Redis.Port)
 	for _, rip := range rips {
 		master, err := r.redisClient.IsMaster(rip, rport, password)
 		if err != nil {
 			r.logger.Errorf("Get redis info failed, maybe this node is not ready, pod ip: %s", rip)
+			connectivityErrors++
 			continue
 		}
 		if master {
 			nMasters++
 		}
 	}
+
+	// Log connectivity status for debugging
+	if connectivityErrors > 0 {
+		r.logger.Warningf("Found %d masters out of %d responsive nodes (%d nodes had connectivity issues)", nMasters, len(rips)-connectivityErrors, connectivityErrors)
+	}
+
 	return nMasters, nil
 }
 
