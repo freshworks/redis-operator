@@ -43,12 +43,12 @@ type RedisFailoverCheck interface {
 	IsSentinelRunning(rFailover *redisfailoverv1.RedisFailover) bool
 	IsClusterRunning(rFailover *redisfailoverv1.RedisFailover) bool
 	// ComputeRequiredHeadroom returns how much additional CPU and memory must be freed on
-	// nodeName for rFailover's master pod (masterPodName) to resize to its desired spec -
+	// nodeName for rFailover's podName (master or slave) to resize to its desired spec -
 	// either may be zero/negative if that resource already fits.
-	ComputeRequiredHeadroom(rFailover *redisfailoverv1.RedisFailover, nodeName, masterPodName string) (requiredCPU, requiredMemory resource.Quantity, err error)
+	ComputeRequiredHeadroom(rFailover *redisfailoverv1.RedisFailover, nodeName, podName string) (requiredCPU, requiredMemory resource.Quantity, err error)
 	// GetStatefulSetResizeOnly returns whether the StatefulSet's most recent update was a
-	// resource-only change, i.e. whether the master pod can be resized in place instead of
-	// deleted for the currently pending revision change.
+	// resource-only change, i.e. whether pods can be resized in place instead of deleted for
+	// the currently pending revision change.
 	GetStatefulSetResizeOnly(rFailover *redisfailoverv1.RedisFailover) (bool, error)
 	// GetPodNode returns the node name podName is scheduled on.
 	GetPodNode(podName string, rFailover *redisfailoverv1.RedisFailover) (string, error)

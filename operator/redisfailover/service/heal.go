@@ -33,7 +33,7 @@ type RedisFailoverHeal interface {
 	// in place, via the resize subresource, instead of deleting and recreating it.
 	ResizePod(podName string, rFailover *redisfailoverv1.RedisFailover) error
 	// FreeResizeHeadroom evicts co-located slave pods of OTHER RedisFailovers on nodeName
-	// to cover requiredCPU and requiredMemory together, ahead of resizing rFailover's master
+	// to cover requiredCPU and requiredMemory together, ahead of resizing rFailover's master or slave
 	// pod. Either requirement may be zero/negative if that resource already fits.
 	FreeResizeHeadroom(rFailover *redisfailoverv1.RedisFailover, nodeName string, requiredCPU, requiredMemory resource.Quantity) error
 	// SetResizeStartedAt records that an in-place resize attempt on podName has begun now.

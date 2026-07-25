@@ -11,13 +11,21 @@ import (
 	"github.com/freshworks/redis-operator/metrics"
 )
 
-// resizeTimeout bounds how long an in-place master resize attempt (including any headroom
-// eviction) is allowed to stay Deferred before falling back to the delete-based rollout.
-// There is no requeue/backoff in this operator (see factory.go's resync), so this is
-// evaluated fresh against the resize-started-at annotation on every ~30s reconcile.
-const resizeTimeout = 10 * time.Minute
+// masterResizeTimeout and slaveResizeTimeout bound how long an in-place resize attempt
+// (including any headroom eviction) is allowed to stay Deferred before falling back to the
+// delete-based rollout. The master gets a longer window because a master restart is costly
+// (Sentinel failover); a slave restart is already considered cheap and acceptable today, so
+// there's less reason to hold out long before falling back to what would have happened
+// anyway. There is no requeue/backoff in this operator (see factory.go's resync), so these
+// are evaluated fresh against the resize-started-at annotation on every ~30s reconcile.
+const (
+	masterResizeTimeout = 6 * time.Minute
+	slaveResizeTimeout  = 2 * time.Minute
+)
 
-// UpdateRedisesPods deletes Redis pods with a stale StatefulSet revision (OnDelete rollout).
+// UpdateRedisesPods deletes Redis pods with a stale StatefulSet revision (OnDelete rollout),
+// or resizes them in place instead when the pending change is resource-only (see
+// k8s.ResizeOnlyAnnotationKey).
 // DisableMasterRollout when true, only slave pods are rolled out on spec change (OnDelete); master is not deleted until the flag is removed.
 func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailover) error {
 	redises, err := r.rfChecker.GetRedisesIPs(rf)
@@ -47,6 +55,11 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 		return err
 	}
 
+	resizeOnly, err := r.rfChecker.GetStatefulSetResizeOnly(rf)
+	if err != nil {
+		return err
+	}
+
 	redisesPods, err := r.rfChecker.GetRedisesSlavesPods(rf)
 	if err != nil {
 		return err
@@ -59,12 +72,15 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 			return err
 		}
 		if revision != ssUR {
-			//Delete pod and wait next round to check if the new one is synced
-			err = r.rfHealer.DeletePod(pod, rf)
-			if err != nil {
-				return err
+			if !resizeOnly {
+				//Delete pod and wait next round to check if the new one is synced
+				err = r.rfHealer.DeletePod(pod, rf)
+				if err != nil {
+					return err
+				}
+				return nil
 			}
-			return nil
+			return r.attemptPodResize(rf, pod, ssUR, slaveResizeTimeout)
 		}
 	}
 
@@ -79,10 +95,6 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 			return err
 		}
 		if masterRevision != ssUR {
-			resizeOnly, err := r.rfChecker.GetStatefulSetResizeOnly(rf)
-			if err != nil {
-				return err
-			}
 			if !resizeOnly {
 				err = r.rfHealer.DeletePod(master, rf)
 				if err != nil {
@@ -90,46 +102,47 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 				}
 				return nil
 			}
-			return r.attemptMasterResize(rf, master, ssUR)
+			return r.attemptPodResize(rf, master, ssUR, masterResizeTimeout)
 		}
 	}
 
 	return nil
 }
 
-// attemptMasterResize is reached only once UpdateRedisesPods has confirmed the pending
-// StatefulSet revision change is resource-only (see k8s.ResizeOnlyAnnotationKey) and all
-// slaves are already ready (checked at the top of UpdateRedisesPods) - so the master's
-// replicas can already hold the new memory before the master's own usage grows into it.
-// It resizes the master pod in place instead of deleting it, evicting other RedisFailovers'
+// attemptPodResize is reached only once UpdateRedisesPods has confirmed the pending
+// StatefulSet revision change is resource-only (see k8s.ResizeOnlyAnnotationKey). It resizes
+// podName (master or slave) in place instead of deleting it, evicting other RedisFailovers'
 // co-located slave pods to free node headroom if the resize is initially Deferred, and falls
-// back to the existing delete-based rollout if the resize is Infeasible or times out.
-func (r *RedisFailoverHandler) attemptMasterResize(rf *redisfailoverv1.RedisFailover, master, ssUR string) error {
-	startedAt, inProgress, err := r.rfChecker.GetResizeState(master, rf)
+// back to the existing delete-based rollout if the resize is Infeasible or exceeds timeout.
+// For the master, the replication-lag precondition is already enforced by the ready-check at
+// the top of UpdateRedisesPods; slaves have no equivalent precondition, since growing a slave
+// carries none of the risk that growing the master past what a slave can hold does.
+func (r *RedisFailoverHandler) attemptPodResize(rf *redisfailoverv1.RedisFailover, podName, ssUR string, timeout time.Duration) error {
+	startedAt, inProgress, err := r.rfChecker.GetResizeState(podName, rf)
 	if err != nil {
 		return err
 	}
 
 	if !inProgress {
-		if err := r.rfHealer.SetResizeStartedAt(master, rf); err != nil {
+		if err := r.rfHealer.SetResizeStartedAt(podName, rf); err != nil {
 			return err
 		}
-		if err := r.rfHealer.ResizePod(master, rf); err != nil {
+		if err := r.rfHealer.ResizePod(podName, rf); err != nil {
 			return err
 		}
 		// Give the kubelet a reconcile cycle to act on the request before checking outcome.
 		return nil
 	}
 
-	if time.Since(startedAt) > resizeTimeout {
-		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("pod", master).Warningf("master resize timed out after %s, falling back to delete", resizeTimeout)
-		if err := r.rfHealer.ClearResizeState(master, rf); err != nil {
+	if time.Since(startedAt) > timeout {
+		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("pod", podName).Warningf("resize timed out after %s, falling back to delete", timeout)
+		if err := r.rfHealer.ClearResizeState(podName, rf); err != nil {
 			return err
 		}
-		return r.rfHealer.DeletePod(master, rf)
+		return r.rfHealer.DeletePod(podName, rf)
 	}
 
-	found, reason, err := r.rfChecker.GetPodResizeCondition(master, rf)
+	found, reason, err := r.rfChecker.GetPodResizeCondition(podName, rf)
 	if err != nil {
 		return err
 	}
@@ -139,30 +152,30 @@ func (r *RedisFailoverHandler) attemptMasterResize(rf *redisfailoverv1.RedisFail
 		// applied - it's equally true if the resize call never reached the pod at all (e.g.
 		// an RBAC rejection on the resize subresource never gets this far in the first
 		// place). Confirm the pod's actual resources match before declaring success.
-		matches, err := r.rfChecker.PodResourcesMatchDesired(master, rf)
+		matches, err := r.rfChecker.PodResourcesMatchDesired(podName, rf)
 		if err != nil {
 			return err
 		}
 		if !matches {
-			r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("pod", master).Warningf("no resize-pending condition but resources don't match desired spec yet, retrying resize")
-			return r.rfHealer.ResizePod(master, rf)
+			r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("pod", podName).Warningf("no resize-pending condition but resources don't match desired spec yet, retrying resize")
+			return r.rfHealer.ResizePod(podName, rf)
 		}
 		// Resize applied. Close the controller-revision-hash bookkeeping gap: a resize never
 		// updates that label on its own, so without this the next reconcile would see
-		// masterRevision != ssUR again and re-enter this whole branch.
-		if err := r.rfHealer.RelabelPodRevision(master, rf, ssUR); err != nil {
+		// this pod's revision != ssUR again and re-enter this whole branch.
+		if err := r.rfHealer.RelabelPodRevision(podName, rf, ssUR); err != nil {
 			return err
 		}
-		return r.rfHealer.ClearResizeState(master, rf)
+		return r.rfHealer.ClearResizeState(podName, rf)
 	}
 
 	switch reason {
 	case corev1.PodReasonInfeasible:
-		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("pod", master).Warningf("master resize infeasible on current node, falling back to delete")
-		if err := r.rfHealer.ClearResizeState(master, rf); err != nil {
+		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("pod", podName).Warningf("resize infeasible on current node, falling back to delete")
+		if err := r.rfHealer.ClearResizeState(podName, rf); err != nil {
 			return err
 		}
-		return r.rfHealer.DeletePod(master, rf)
+		return r.rfHealer.DeletePod(podName, rf)
 
 	case corev1.PodReasonDeferred:
 		// Re-issue the resize on every retry, not just the first attempt. ResizePod only ran
@@ -172,15 +185,15 @@ func (r *RedisFailoverHandler) attemptMasterResize(rf *redisfailoverv1.RedisFail
 		// ever pick up the new value is the eventual timeout-driven DeletePod fallback. This
 		// keeps the pod's target in sync with the CR on every reconcile; it's a no-op patch
 		// if nothing changed.
-		if err := r.rfHealer.ResizePod(master, rf); err != nil {
+		if err := r.rfHealer.ResizePod(podName, rf); err != nil {
 			return err
 		}
 
-		nodeName, err := r.rfChecker.GetPodNode(master, rf)
+		nodeName, err := r.rfChecker.GetPodNode(podName, rf)
 		if err != nil {
 			return err
 		}
-		requiredCPU, requiredMemory, err := r.rfChecker.ComputeRequiredHeadroom(rf, nodeName, master)
+		requiredCPU, requiredMemory, err := r.rfChecker.ComputeRequiredHeadroom(rf, nodeName, podName)
 		if err != nil {
 			return err
 		}
@@ -189,7 +202,7 @@ func (r *RedisFailoverHandler) attemptMasterResize(rf *redisfailoverv1.RedisFail
 			return nil
 		}
 		if err := r.rfHealer.FreeResizeHeadroom(rf, nodeName, requiredCPU, requiredMemory); err != nil {
-			r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("pod", master).Warningf("could not free enough headroom yet, will keep retrying until timeout: %v", err)
+			r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("pod", podName).Warningf("could not free enough headroom yet, will keep retrying until timeout: %v", err)
 		}
 		return nil
 	}

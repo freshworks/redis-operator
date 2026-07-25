@@ -11,8 +11,8 @@ import (
 )
 
 // evictionCandidate is a co-located slave pod (belonging to some other RedisFailover) that
-// could be evicted to free CPU and/or memory on a node ahead of resizing a master pod in
-// place.
+// could be evicted to free CPU and/or memory on a node ahead of resizing a master or slave
+// pod in place.
 type evictionCandidate struct {
 	Namespace string
 	Name      string
@@ -21,14 +21,15 @@ type evictionCandidate struct {
 }
 
 // ComputeRequiredHeadroom returns how much additional CPU and memory must be freed on
-// nodeName for rFailover's master pod to resize to its currently desired spec - either may
-// be zero/negative if that resource already fits. masterPodName's own current allocation is
-// deliberately excluded from the "everything else on the node" totals, and
-// rFailover.Spec.Redis.Resources is used directly as the master's desired usage - this
-// avoids having to reconcile the master's spec (which already shows the new values once a
-// resize is requested) against its status (which shows what's actually allocated until the
-// resize completes).
-func (r *RedisFailoverChecker) ComputeRequiredHeadroom(rFailover *redisfailoverv1.RedisFailover, nodeName, masterPodName string) (resource.Quantity, resource.Quantity, error) {
+// nodeName for rFailover's podName (master or slave) to resize to its currently desired spec
+// - either may be zero/negative if that resource already fits. podName's own current
+// allocation is deliberately excluded from the "everything else on the node" totals, and
+// rFailover.Spec.Redis.Resources is used directly as the desired usage (the same value
+// applies to every replica, since they share one StatefulSet template) - this avoids having
+// to reconcile the pod's spec (which already shows the new values once a resize is
+// requested) against its status (which shows what's actually allocated until the resize
+// completes).
+func (r *RedisFailoverChecker) ComputeRequiredHeadroom(rFailover *redisfailoverv1.RedisFailover, nodeName, podName string) (resource.Quantity, resource.Quantity, error) {
 	node, err := r.k8sService.GetNode(nodeName)
 	if err != nil {
 		return resource.Quantity{}, resource.Quantity{}, err
@@ -44,7 +45,7 @@ func (r *RedisFailoverChecker) ComputeRequiredHeadroom(rFailover *redisfailoverv
 	otherCPU := resource.Quantity{}
 	otherMemory := resource.Quantity{}
 	for _, pod := range podList.Items {
-		if pod.Name == masterPodName && pod.Namespace == rFailover.Namespace {
+		if pod.Name == podName && pod.Namespace == rFailover.Namespace {
 			continue
 		}
 		for _, container := range pod.Spec.Containers {
@@ -67,7 +68,7 @@ func (r *RedisFailoverChecker) ComputeRequiredHeadroom(rFailover *redisfailoverv
 // FreeResizeHeadroom evicts co-located slave pods belonging to OTHER RedisFailovers on
 // nodeName - never rFailover's own slaves - selecting the minimal-pod-count, minimal-waste
 // subset that covers requiredCPU and requiredMemory together (either constraint is skipped
-// if its quantity is zero/negative), to make room for rFailover's master pod to resize in
+// if its quantity is zero/negative), to make room for rFailover's master or slave pod to resize in
 // place. Returns an error if the requirement(s) cannot be covered even by evicting every
 // candidate; callers should treat that the same as an Infeasible resize.
 func (r *RedisFailoverHealer) FreeResizeHeadroom(rFailover *redisfailoverv1.RedisFailover, nodeName string, requiredCPU, requiredMemory resource.Quantity) error {
