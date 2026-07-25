@@ -80,7 +80,7 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 				}
 				return nil
 			}
-			return r.attemptPodResize(rf, pod, ssUR, slaveResizeTimeout)
+			return r.attemptPodResize(rf, pod, ssUR, slaveResizeTimeout, false)
 		}
 	}
 
@@ -102,7 +102,7 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 				}
 				return nil
 			}
-			return r.attemptPodResize(rf, master, ssUR, masterResizeTimeout)
+			return r.attemptPodResize(rf, master, ssUR, masterResizeTimeout, true)
 		}
 	}
 
@@ -111,13 +111,18 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 
 // attemptPodResize is reached only once UpdateRedisesPods has confirmed the pending
 // StatefulSet revision change is resource-only (see k8s.ResizeOnlyAnnotationKey). It resizes
-// podName (master or slave) in place instead of deleting it, evicting other RedisFailovers'
-// co-located slave pods to free node headroom if the resize is initially Deferred, and falls
-// back to the existing delete-based rollout if the resize is Infeasible or exceeds timeout.
+// podName (master or slave) in place instead of deleting it, and falls back to the existing
+// delete-based rollout if the resize is Infeasible, Deferred with allowEviction false, or
+// exceeds timeout.
 // For the master, the replication-lag precondition is already enforced by the ready-check at
 // the top of UpdateRedisesPods; slaves have no equivalent precondition, since growing a slave
 // carries none of the risk that growing the master past what a slave can hold does.
-func (r *RedisFailoverHandler) attemptPodResize(rf *redisfailoverv1.RedisFailover, podName, ssUR string, timeout time.Duration) error {
+// allowEviction gates whether a Deferred resize may evict other RedisFailovers' co-located
+// slave pods to free headroom - true for the master, since a master restart is costly enough
+// to justify disrupting another tenant's slave; false for slaves, since a slave restart is
+// already cheap and acceptable, and there's no justification for evicting someone else's pod
+// just to avoid one - a Deferred slave resize falls straight to delete instead.
+func (r *RedisFailoverHandler) attemptPodResize(rf *redisfailoverv1.RedisFailover, podName, ssUR string, timeout time.Duration, allowEviction bool) error {
 	startedAt, inProgress, err := r.rfChecker.GetResizeState(podName, rf)
 	if err != nil {
 		return err
@@ -178,6 +183,14 @@ func (r *RedisFailoverHandler) attemptPodResize(rf *redisfailoverv1.RedisFailove
 		return r.rfHealer.DeletePod(podName, rf)
 
 	case corev1.PodReasonDeferred:
+		if !allowEviction {
+			r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("pod", podName).Warningf("resize deferred and eviction not permitted for this pod, falling back to delete")
+			if err := r.rfHealer.ClearResizeState(podName, rf); err != nil {
+				return err
+			}
+			return r.rfHealer.DeletePod(podName, rf)
+		}
+
 		// Re-issue the resize on every retry, not just the first attempt. ResizePod only ran
 		// once, when this attempt began; if the CR's resources changed since (e.g. a human
 		// lowers the ask after seeing it's stuck), the pod's live resize target would
