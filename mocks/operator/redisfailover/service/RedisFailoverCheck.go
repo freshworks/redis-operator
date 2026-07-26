@@ -395,7 +395,7 @@ func (_m *RedisFailoverCheck) GetPodResizeCondition(podName string, rFailover *v
 	return r0, r1, r2
 }
 
-func (_m *RedisFailoverCheck) GetResizeState(podName string, rFailover *v1.RedisFailover) (time.Time, bool, error) {
+func (_m *RedisFailoverCheck) GetResizeState(podName string, rFailover *v1.RedisFailover) (time.Time, string, bool, error) {
 	ret := _m.Called(podName, rFailover)
 
 	if len(ret) == 0 {
@@ -403,9 +403,10 @@ func (_m *RedisFailoverCheck) GetResizeState(podName string, rFailover *v1.Redis
 	}
 
 	var r0 time.Time
-	var r1 bool
-	var r2 error
-	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) (time.Time, bool, error)); ok {
+	var r1 string
+	var r2 bool
+	var r3 error
+	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) (time.Time, string, bool, error)); ok {
 		return rf(podName, rFailover)
 	}
 	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) time.Time); ok {
@@ -414,19 +415,25 @@ func (_m *RedisFailoverCheck) GetResizeState(podName string, rFailover *v1.Redis
 		r0 = ret.Get(0).(time.Time)
 	}
 
-	if rf, ok := ret.Get(1).(func(string, *v1.RedisFailover) bool); ok {
+	if rf, ok := ret.Get(1).(func(string, *v1.RedisFailover) string); ok {
 		r1 = rf(podName, rFailover)
 	} else {
-		r1 = ret.Get(1).(bool)
+		r1 = ret.Get(1).(string)
 	}
 
-	if rf, ok := ret.Get(2).(func(string, *v1.RedisFailover) error); ok {
+	if rf, ok := ret.Get(2).(func(string, *v1.RedisFailover) bool); ok {
 		r2 = rf(podName, rFailover)
 	} else {
-		r2 = ret.Error(2)
+		r2 = ret.Get(2).(bool)
 	}
 
-	return r0, r1, r2
+	if rf, ok := ret.Get(3).(func(string, *v1.RedisFailover) error); ok {
+		r3 = rf(podName, rFailover)
+	} else {
+		r3 = ret.Error(3)
+	}
+
+	return r0, r1, r2, r3
 }
 
 func (_m *RedisFailoverCheck) PodResourcesMatchDesired(podName string, rFailover *v1.RedisFailover) (bool, error) {

@@ -50,16 +50,16 @@ func (_m *RedisFailoverHeal) FreeResizeHeadroom(rFailover *v1.RedisFailover, nod
 	return r0
 }
 
-func (_m *RedisFailoverHeal) SetResizeStartedAt(podName string, rFailover *v1.RedisFailover) error {
-	ret := _m.Called(podName, rFailover)
+func (_m *RedisFailoverHeal) SetResizeStartedAt(podName string, rFailover *v1.RedisFailover, targetRevision string) error {
+	ret := _m.Called(podName, rFailover, targetRevision)
 
 	if len(ret) == 0 {
 		panic("no return value specified for SetResizeStartedAt")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) error); ok {
-		r0 = rf(podName, rFailover)
+	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover, string) error); ok {
+		r0 = rf(podName, rFailover, targetRevision)
 	} else {
 		r0 = ret.Error(0)
 	}

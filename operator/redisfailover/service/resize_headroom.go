@@ -90,8 +90,8 @@ func (r *RedisFailoverHealer) FreeResizeHeadroom(rFailover *redisfailoverv1.Redi
 		for _, c := range chosen {
 			pool = removeCandidate(pool, c)
 			if err := r.k8sService.EvictPod(c.Namespace, c.Name); err != nil {
-				r.logger.WithField("namespace", c.Namespace).WithField("pod", c.Name).Warningf("eviction rejected, recomputing remaining candidates: %v", err)
-				break // pool has shrunk; recompute against the same remaining deficit
+				r.logger.WithField("namespace", c.Namespace).WithField("pod", c.Name).Warningf("eviction rejected, skipping and continuing with the rest of this batch: %v", err)
+				continue // this candidate is out of the pool; the rest of chosen may still succeed
 			}
 			if remainingCPU.Sign() > 0 {
 				remainingCPU.Sub(c.CPU)

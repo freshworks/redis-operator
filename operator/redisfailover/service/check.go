@@ -8,7 +8,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	redisfailoverv1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
@@ -55,9 +54,10 @@ type RedisFailoverCheck interface {
 	// GetPodResizeCondition reports whether podName currently has a PodResizePending
 	// condition and, if so, its reason (corev1.PodReasonDeferred or corev1.PodReasonInfeasible).
 	GetPodResizeCondition(podName string, rFailover *redisfailoverv1.RedisFailover) (found bool, reason string, err error)
-	// GetResizeState reports when an in-place resize attempt on podName began, if one is
-	// currently tracked (see resizeStartedAtAnnotationKey).
-	GetResizeState(podName string, rFailover *redisfailoverv1.RedisFailover) (startedAt time.Time, exists bool, err error)
+	// GetResizeState reports when an in-place resize attempt on podName began and which
+	// StatefulSet revision it targeted, if one is currently tracked (see
+	// resizeStartedAtAnnotationKey / resizeTargetRevisionAnnotationKey).
+	GetResizeState(podName string, rFailover *redisfailoverv1.RedisFailover) (startedAt time.Time, targetRevision string, exists bool, err error)
 	// PodResourcesMatchDesired reports whether podName's redis container currently has the
 	// same resources as rFailover.Spec.Redis.Resources. The absence of a PodResizePending
 	// condition alone doesn't prove a resize actually applied - it's also true when the
@@ -559,29 +559,39 @@ func (r *RedisFailoverChecker) GetPodResizeCondition(podName string, rFailover *
 	return false, "", nil
 }
 
-// GetResizeState reports when an in-place resize attempt on podName began, if one is
-// currently tracked.
-func (r *RedisFailoverChecker) GetResizeState(podName string, rFailover *redisfailoverv1.RedisFailover) (time.Time, bool, error) {
+// GetResizeState reports when an in-place resize attempt on podName began and which
+// StatefulSet revision it targeted, if one is currently tracked. The target revision lets the
+// caller distinguish a genuinely still-in-progress attempt for the current target from a
+// leftover annotation an already-resolved attempt left behind for a since-superseded one.
+func (r *RedisFailoverChecker) GetResizeState(podName string, rFailover *redisfailoverv1.RedisFailover) (time.Time, string, bool, error) {
 	pod, err := r.k8sService.GetPod(rFailover.Namespace, podName)
 	if err != nil {
-		return time.Time{}, false, err
+		return time.Time{}, "", false, err
 	}
 	if pod == nil {
-		return time.Time{}, false, errors.New("pod not found")
+		return time.Time{}, "", false, errors.New("pod not found")
 	}
 	raw, ok := pod.Annotations[resizeStartedAtAnnotationKey]
 	if !ok {
-		return time.Time{}, false, nil
+		return time.Time{}, "", false, nil
 	}
 	startedAt, err := time.Parse(time.RFC3339, raw)
 	if err != nil {
-		return time.Time{}, false, err
+		return time.Time{}, "", false, err
 	}
-	return startedAt, true, nil
+	return startedAt, pod.Annotations[resizeTargetRevisionAnnotationKey], true, nil
 }
 
 // PodResourcesMatchDesired reports whether podName's redis container currently has the same
 // resources as rFailover.Spec.Redis.Resources.
+//
+// Compares only the resource names present in the CR spec, not the whole ResourceRequirements
+// struct - a namespace LimitRange can inject additional defaults (e.g. ephemeral-storage) into
+// the live pod's Requests/Limits that never appear in the CR at all. A whole-struct equality
+// check would never match in that case, causing ResizePod to be re-issued every reconcile
+// until the timeout forces a DeletePod fallback - the feature would silently never succeed for
+// any tenant under such a LimitRange. Extra keys the live pod has beyond what the CR asked for
+// are simply ignored.
 func (r *RedisFailoverChecker) PodResourcesMatchDesired(podName string, rFailover *redisfailoverv1.RedisFailover) (bool, error) {
 	pod, err := r.k8sService.GetPod(rFailover.Namespace, podName)
 	if err != nil {
@@ -592,10 +602,26 @@ func (r *RedisFailoverChecker) PodResourcesMatchDesired(podName string, rFailove
 	}
 	for _, container := range pod.Spec.Containers {
 		if container.Name == "redis" {
-			return apiequality.Semantic.DeepEqual(container.Resources, rFailover.Spec.Redis.Resources), nil
+			desired := rFailover.Spec.Redis.Resources
+			return resourceListMatches(container.Resources.Requests, desired.Requests) &&
+				resourceListMatches(container.Resources.Limits, desired.Limits), nil
 		}
 	}
 	return false, errors.New("redis container not found in pod")
+}
+
+// resourceListMatches reports whether actual has the same quantity as desired for every
+// resource name present in desired. A name in desired but absent from actual is a mismatch
+// (resize hasn't applied); a name present in actual but not in desired (e.g. LimitRange
+// defaulting) is ignored.
+func resourceListMatches(actual, desired corev1.ResourceList) bool {
+	for name, desiredQty := range desired {
+		actualQty, ok := actual[name]
+		if !ok || actualQty.Cmp(desiredQty) != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // GetRedisRevisionHash returns the statefulset uid for the pod

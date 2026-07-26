@@ -123,13 +123,18 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 // already cheap and acceptable, and there's no justification for evicting someone else's pod
 // just to avoid one - a Deferred slave resize falls straight to delete instead.
 func (r *RedisFailoverHandler) attemptPodResize(rf *redisfailoverv1.RedisFailover, podName, ssUR string, timeout time.Duration, allowEviction bool) error {
-	startedAt, inProgress, err := r.rfChecker.GetResizeState(podName, rf)
+	startedAt, targetRevision, inProgress, err := r.rfChecker.GetResizeState(podName, rf)
 	if err != nil {
 		return err
 	}
 
-	if !inProgress {
-		if err := r.rfHealer.SetResizeStartedAt(podName, rf); err != nil {
+	// A tracked attempt whose target revision doesn't match ssUR is a leftover from an
+	// already-resolved attempt (e.g. ClearResizeState failed after a successful resize) or a
+	// long-abandoned earlier one - not a continuation of the current one. Treat it the same as
+	// no attempt in progress, so this fresh attempt gets its own full timeout window instead of
+	// inheriting a stale startedAt that could already exceed it.
+	if !inProgress || targetRevision != ssUR {
+		if err := r.rfHealer.SetResizeStartedAt(podName, rf, ssUR); err != nil {
 			return err
 		}
 		if err := r.rfHealer.ResizePod(podName, rf); err != nil {

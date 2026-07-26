@@ -36,9 +36,10 @@ type RedisFailoverHeal interface {
 	// to cover requiredCPU and requiredMemory together, ahead of resizing rFailover's master or slave
 	// pod. Either requirement may be zero/negative if that resource already fits.
 	FreeResizeHeadroom(rFailover *redisfailoverv1.RedisFailover, nodeName string, requiredCPU, requiredMemory resource.Quantity) error
-	// SetResizeStartedAt records that an in-place resize attempt on podName has begun now.
-	SetResizeStartedAt(podName string, rFailover *redisfailoverv1.RedisFailover) error
-	// ClearResizeState removes the in-place resize tracking annotation from podName, once a
+	// SetResizeStartedAt records that an in-place resize attempt on podName, targeting
+	// targetRevision, has begun now.
+	SetResizeStartedAt(podName string, rFailover *redisfailoverv1.RedisFailover, targetRevision string) error
+	// ClearResizeState removes the in-place resize tracking annotations from podName, once a
 	// resize has succeeded or been abandoned in favor of the delete-based fallback.
 	ClearResizeState(podName string, rFailover *redisfailoverv1.RedisFailover) error
 	// RelabelPodRevision patches podName's controller-revision-hash label to revision. Only
@@ -497,16 +498,23 @@ func (r *RedisFailoverHealer) ResizePod(podName string, rFailover *redisfailover
 	return r.k8sService.ResizePod(rFailover.Namespace, podName, "redis", rFailover.Spec.Redis.Resources)
 }
 
-// SetResizeStartedAt records that an in-place resize attempt on podName has begun now.
-func (r *RedisFailoverHealer) SetResizeStartedAt(podName string, rFailover *redisfailoverv1.RedisFailover) error {
+// SetResizeStartedAt records that an in-place resize attempt on podName, targeting
+// targetRevision, has begun now. Recording the target revision alongside the timestamp lets
+// GetResizeState tell a genuinely still-in-progress attempt for the current target apart from
+// a leftover annotation from an already-resolved attempt for a since-superseded one.
+func (r *RedisFailoverHealer) SetResizeStartedAt(podName string, rFailover *redisfailoverv1.RedisFailover, targetRevision string) error {
 	return r.k8sService.UpdatePodAnnotations(rFailover.Namespace, podName, map[string]string{
-		resizeStartedAtAnnotationKey: time.Now().Format(time.RFC3339),
+		resizeStartedAtAnnotationKey:      time.Now().Format(time.RFC3339),
+		resizeTargetRevisionAnnotationKey: targetRevision,
 	})
 }
 
-// ClearResizeState removes the in-place resize tracking annotation from podName.
+// ClearResizeState removes the in-place resize tracking annotations from podName.
 func (r *RedisFailoverHealer) ClearResizeState(podName string, rFailover *redisfailoverv1.RedisFailover) error {
-	return r.k8sService.RemovePodAnnotation(rFailover.Namespace, podName, resizeStartedAtAnnotationKey)
+	if err := r.k8sService.RemovePodAnnotation(rFailover.Namespace, podName, resizeStartedAtAnnotationKey); err != nil {
+		return err
+	}
+	return r.k8sService.RemovePodAnnotation(rFailover.Namespace, podName, resizeTargetRevisionAnnotationKey)
 }
 
 // RelabelPodRevision patches podName's controller-revision-hash label to revision, closing

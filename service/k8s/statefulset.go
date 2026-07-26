@@ -26,18 +26,31 @@ import (
 // reads this to decide whether the master pod can be resized in place instead of deleted.
 const ResizeOnlyAnnotationKey = "redis-failover.freshworks.com/resize-only"
 
-// isResourceOnlyChange reports whether the only difference between oldSpec and newSpec
-// is container resource requests/limits, by neutralizing that one field on copies of both
-// and comparing everything else. Uses apiequality.Semantic.DeepEqual rather than
-// reflect.DeepEqual because raw reflection can report false differences on resource.Quantity.
-func isResourceOnlyChange(oldSpec, newSpec *corev1.PodSpec) bool {
+// isResourceOnlyChange reports whether the only difference between oldSpec and newSpec is
+// containerName's resource requests/limits, by neutralizing that one field on copies of both
+// (only for containerName, not every container) and comparing everything else. Uses
+// apiequality.Semantic.DeepEqual rather than reflect.DeepEqual because raw reflection can
+// report false differences on resource.Quantity.
+//
+// Scoped to a single container deliberately: the in-place resize path this feeds into only
+// knows how to resize containerName (see ResizePod/PodResourcesMatchDesired). Neutralizing
+// every container's Resources here would misclassify a resource-only change to some other
+// container (e.g. the exporter sidecar) as resize-only, when this feature can't actually
+// apply it - the resize would silently no-op for that container while still being marked
+// successful. Requiring every other container to match exactly means such a change correctly
+// falls through to the existing delete-based path instead.
+func isResourceOnlyChange(oldSpec, newSpec *corev1.PodSpec, containerName string) bool {
 	oldCopy := oldSpec.DeepCopy()
 	newCopy := newSpec.DeepCopy()
 	for i := range oldCopy.Containers {
-		oldCopy.Containers[i].Resources = corev1.ResourceRequirements{}
+		if oldCopy.Containers[i].Name == containerName {
+			oldCopy.Containers[i].Resources = corev1.ResourceRequirements{}
+		}
 	}
 	for i := range newCopy.Containers {
-		newCopy.Containers[i].Resources = corev1.ResourceRequirements{}
+		if newCopy.Containers[i].Name == containerName {
+			newCopy.Containers[i].Resources = corev1.ResourceRequirements{}
+		}
 	}
 	return apiequality.Semantic.DeepEqual(oldCopy, newCopy)
 }
@@ -205,7 +218,9 @@ func (s *StatefulSetService) CreateOrUpdateStatefulSet(namespace string, statefu
 		return err
 	}
 
-	resourceOnlyChange := isResourceOnlyChange(&storedStatefulSet.Spec.Template.Spec, &dryRunResult.Spec.Template.Spec)
+	// "redis" is the only container the in-place resize path knows how to resize
+	// (see ResizePod/PodResourcesMatchDesired) - keep this in sync with those.
+	resourceOnlyChange := isResourceOnlyChange(&storedStatefulSet.Spec.Template.Spec, &dryRunResult.Spec.Template.Spec, "redis")
 	if statefulSet.Annotations == nil {
 		statefulSet.Annotations = map[string]string{}
 	}
