@@ -42,8 +42,10 @@ spec:
       - name: {{ .Chart.Name }}
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion}}"
         {{- if .Values.image.cli_args }}
-        args: 
-        - {{ quote .Values.image.cli_args }}
+        args:
+          {{- range .Values.image.cli_args }}
+          - {{ . | quote }}
+          {{- end }}
         {{- end }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         {{- if .Values.extraEnvVars }}
