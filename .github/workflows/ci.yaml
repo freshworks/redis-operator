@@ -188,6 +188,10 @@ jobs:
                   go-version-file: go.mod
             - name: Install conntrack
               run: sudo apt-get install -y conntrack
+            - name: Ensure /etc/cni/net.d exists
+              # Works around a known setup-minikube regression on current runner images:
+              # https://github.com/medyagh/setup-minikube/issues/835
+              run: sudo mkdir -p /etc/cni/net.d
             - uses: medyagh/setup-minikube@latest
               with:
                   kubernetes-version: ${{ matrix.kubernetes }}
