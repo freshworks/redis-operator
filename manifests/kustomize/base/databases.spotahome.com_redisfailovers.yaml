@@ -6850,6 +6850,30 @@ spec:
                   reservedPodMemoryPercent:
                     format: int32
                     type: integer
+                  resizePolicy:
+                    description: |-
+                      ResizePolicy configures the "redis" container's K8s resize-subresource policy (KEP-1287).
+                      If set, it is passed through to the "redis" container as-is; if unset, the operator never
+                      attempts an in-place pod resize for this RedisFailover and always deletes/recreates instead.
+                    items:
+                      description: ContainerResizePolicy represents resource resize
+                        policy for the container.
+                      properties:
+                        resourceName:
+                          description: |-
+                            Name of the resource to which this resource resize policy applies.
+                            Supported values: cpu, memory.
+                          type: string
+                        restartPolicy:
+                          description: |-
+                            Restart policy to apply when specified resource is resized.
+                            If not specified, it defaults to NotRequired.
+                          type: string
+                      required:
+                      - resourceName
+                      - restartPolicy
+                      type: object
+                    type: array
                   resources:
                     description: ResourceRequirements describes the compute resource
                       requirements.

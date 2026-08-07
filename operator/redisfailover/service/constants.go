@@ -37,22 +37,4 @@ const (
 	clusterAutoscalerSafeToEvictAnnotationKey    = "cluster-autoscaler.kubernetes.io/safe-to-evict"
 	clusterAutoscalerSafeToEvictAnnotationMaster = "false"
 	clusterAutoscalerSafeToEvictAnnotationSlave  = "true"
-
-	// redisFailoverNameLabelKey identifies which RedisFailover a pod belongs to (set by the
-	// handler on every pod it creates). Used to exclude an endpoint's own slaves from the
-	// eviction candidate pool when freeing headroom for that same endpoint's master resize.
-	redisFailoverNameLabelKey = "redisfailovers.databases.spotahome.com/name"
-
-	// resizeStartedAtAnnotationKey records when an in-place resize attempt began, so it can be
-	// timed out and fall back to the delete-based rollout. There is no requeue/backoff or
-	// Status subresource in this operator, so this state must be tracked this way across the
-	// periodic reconcile resync rather than in memory.
-	resizeStartedAtAnnotationKey = "redis-failover.freshworks.com/resize-started-at"
-
-	// resizeTargetRevisionAnnotationKey records which StatefulSet revision a tracked resize
-	// attempt was for. Without this, a leftover resize-started-at annotation from an
-	// already-resolved attempt (e.g. ClearResizeState failed after a successful resize) would
-	// be indistinguishable from a still-in-progress attempt for a brand-new target, and its
-	// stale timestamp could send an unrelated later resize straight to a timeout.
-	resizeTargetRevisionAnnotationKey = "redis-failover.freshworks.com/resize-target-revision"
 )

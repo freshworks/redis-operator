@@ -5,8 +5,6 @@ package mocks
 import (
 	mock "github.com/stretchr/testify/mock"
 
-	resource "k8s.io/apimachinery/pkg/api/resource"
-
 	v1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
 )
 
@@ -21,57 +19,6 @@ func (_m *RedisFailoverHeal) DeletePod(podName string, rFailover *v1.RedisFailov
 
 	if len(ret) == 0 {
 		panic("no return value specified for DeletePod")
-	}
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) error); ok {
-		r0 = rf(podName, rFailover)
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
-}
-
-func (_m *RedisFailoverHeal) FreeResizeHeadroom(rFailover *v1.RedisFailover, nodeName string, requiredCPU resource.Quantity, requiredMemory resource.Quantity) error {
-	ret := _m.Called(rFailover, nodeName, requiredCPU, requiredMemory)
-
-	if len(ret) == 0 {
-		panic("no return value specified for FreeResizeHeadroom")
-	}
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func(*v1.RedisFailover, string, resource.Quantity, resource.Quantity) error); ok {
-		r0 = rf(rFailover, nodeName, requiredCPU, requiredMemory)
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
-}
-
-func (_m *RedisFailoverHeal) SetResizeStartedAt(podName string, rFailover *v1.RedisFailover, targetRevision string) error {
-	ret := _m.Called(podName, rFailover, targetRevision)
-
-	if len(ret) == 0 {
-		panic("no return value specified for SetResizeStartedAt")
-	}
-
-	var r0 error
-	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover, string) error); ok {
-		r0 = rf(podName, rFailover, targetRevision)
-	} else {
-		r0 = ret.Error(0)
-	}
-
-	return r0
-}
-
-func (_m *RedisFailoverHeal) ClearResizeState(podName string, rFailover *v1.RedisFailover) error {
-	ret := _m.Called(podName, rFailover)
-
-	if len(ret) == 0 {
-		panic("no return value specified for ClearResizeState")
 	}
 
 	var r0 error

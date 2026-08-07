@@ -46,19 +46,6 @@ rules:
       - patch
       - update
   - apiGroups:
-      - ""
-    resources:
-      - pods/eviction
-    verbs:
-      - create
-  - apiGroups:
-      - ""
-    resources:
-      - nodes
-    verbs:
-      - get
-      - list
-  - apiGroups:
       - apps
     resources:
       - deployments

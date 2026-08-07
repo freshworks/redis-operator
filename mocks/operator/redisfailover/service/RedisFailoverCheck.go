@@ -7,8 +7,6 @@ import (
 
 	time "time"
 
-	resource "k8s.io/apimachinery/pkg/api/resource"
-
 	v1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
 )
 
@@ -272,41 +270,6 @@ func (_m *RedisFailoverCheck) GetMasterIP(rFailover *v1.RedisFailover) (string, 
 	return r0, r1
 }
 
-// GetMaxRedisPodTime provides a mock function with given fields: rFailover
-func (_m *RedisFailoverCheck) ComputeRequiredHeadroom(rFailover *v1.RedisFailover, nodeName string, masterPodName string) (resource.Quantity, resource.Quantity, error) {
-	ret := _m.Called(rFailover, nodeName, masterPodName)
-
-	if len(ret) == 0 {
-		panic("no return value specified for ComputeRequiredHeadroom")
-	}
-
-	var r0 resource.Quantity
-	var r1 resource.Quantity
-	var r2 error
-	if rf, ok := ret.Get(0).(func(*v1.RedisFailover, string, string) (resource.Quantity, resource.Quantity, error)); ok {
-		return rf(rFailover, nodeName, masterPodName)
-	}
-	if rf, ok := ret.Get(0).(func(*v1.RedisFailover, string, string) resource.Quantity); ok {
-		r0 = rf(rFailover, nodeName, masterPodName)
-	} else {
-		r0 = ret.Get(0).(resource.Quantity)
-	}
-
-	if rf, ok := ret.Get(1).(func(*v1.RedisFailover, string, string) resource.Quantity); ok {
-		r1 = rf(rFailover, nodeName, masterPodName)
-	} else {
-		r1 = ret.Get(1).(resource.Quantity)
-	}
-
-	if rf, ok := ret.Get(2).(func(*v1.RedisFailover, string, string) error); ok {
-		r2 = rf(rFailover, nodeName, masterPodName)
-	} else {
-		r2 = ret.Error(2)
-	}
-
-	return r0, r1, r2
-}
-
 func (_m *RedisFailoverCheck) GetStatefulSetResizeOnly(rFailover *v1.RedisFailover) (bool, error) {
 	ret := _m.Called(rFailover)
 
@@ -327,33 +290,6 @@ func (_m *RedisFailoverCheck) GetStatefulSetResizeOnly(rFailover *v1.RedisFailov
 
 	if rf, ok := ret.Get(1).(func(*v1.RedisFailover) error); ok {
 		r1 = rf(rFailover)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
-func (_m *RedisFailoverCheck) GetPodNode(podName string, rFailover *v1.RedisFailover) (string, error) {
-	ret := _m.Called(podName, rFailover)
-
-	if len(ret) == 0 {
-		panic("no return value specified for GetPodNode")
-	}
-
-	var r0 string
-	var r1 error
-	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) (string, error)); ok {
-		return rf(podName, rFailover)
-	}
-	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) string); ok {
-		r0 = rf(podName, rFailover)
-	} else {
-		r0 = ret.Get(0).(string)
-	}
-
-	if rf, ok := ret.Get(1).(func(string, *v1.RedisFailover) error); ok {
-		r1 = rf(podName, rFailover)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -393,47 +329,6 @@ func (_m *RedisFailoverCheck) GetPodResizeCondition(podName string, rFailover *v
 	}
 
 	return r0, r1, r2
-}
-
-func (_m *RedisFailoverCheck) GetResizeState(podName string, rFailover *v1.RedisFailover) (time.Time, string, bool, error) {
-	ret := _m.Called(podName, rFailover)
-
-	if len(ret) == 0 {
-		panic("no return value specified for GetResizeState")
-	}
-
-	var r0 time.Time
-	var r1 string
-	var r2 bool
-	var r3 error
-	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) (time.Time, string, bool, error)); ok {
-		return rf(podName, rFailover)
-	}
-	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) time.Time); ok {
-		r0 = rf(podName, rFailover)
-	} else {
-		r0 = ret.Get(0).(time.Time)
-	}
-
-	if rf, ok := ret.Get(1).(func(string, *v1.RedisFailover) string); ok {
-		r1 = rf(podName, rFailover)
-	} else {
-		r1 = ret.Get(1).(string)
-	}
-
-	if rf, ok := ret.Get(2).(func(string, *v1.RedisFailover) bool); ok {
-		r2 = rf(podName, rFailover)
-	} else {
-		r2 = ret.Get(2).(bool)
-	}
-
-	if rf, ok := ret.Get(3).(func(string, *v1.RedisFailover) error); ok {
-		r3 = rf(podName, rFailover)
-	} else {
-		r3 = ret.Error(3)
-	}
-
-	return r0, r1, r2, r3
 }
 
 func (_m *RedisFailoverCheck) PodResourcesMatchDesired(podName string, rFailover *v1.RedisFailover) (bool, error) {

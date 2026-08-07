@@ -2,26 +2,23 @@ package redisfailover_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 
+	redisfailoverv1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
 	"github.com/freshworks/redis-operator/log"
 	"github.com/freshworks/redis-operator/metrics"
-	redisfailoverv1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
 	mRFService "github.com/freshworks/redis-operator/mocks/operator/redisfailover/service"
 	mK8SService "github.com/freshworks/redis-operator/mocks/service/k8s"
 	rfOperator "github.com/freshworks/redis-operator/operator/redisfailover"
 )
 
 // This file covers attemptPodResize's branches (checker.go), reached via UpdateRedisesPods so
-// the real master/slave call sites - including the allowEviction wiring - are exercised, not
-// just the function in isolation. Prior to this, none of these branches had any Go test
-// coverage; only the manual EKS testing described in the PR body covered them.
+// the real master/slave call sites are exercised, not just the function in isolation. Master
+// and slave now share identical logic, and there is no annotation-based state: the pod's live
+// resources (via PodResourcesMatchDesired) and resize condition are the only state consulted.
 
 const (
 	testSSVersion = "new-revision"
@@ -36,11 +33,19 @@ func newResizeTestHandler(rf *redisfailoverv1.RedisFailover, mrfc *mRFService.Re
 	return rfOperator.NewRedisFailoverHandler(config, mrfs, mrfc, mrfh, mk, metrics.Dummy, log.Dummy)
 }
 
+func testResizePolicy() []corev1.ContainerResizePolicy {
+	return []corev1.ContainerResizePolicy{
+		{ResourceName: corev1.ResourceCPU, RestartPolicy: corev1.NotRequired},
+	}
+}
+
 // setupMasterResizeTest wires up the mocks needed to reach attemptPodResize for the master pod
-// with a resize-only change already detected - a single redis IP (so the ready-check loop has
-// no slaves to check), one stale master revision, no stale slaves.
+// with a resize-only change already detected and ResizePolicy set on the CR (the opt-in gate) -
+// a single redis IP (so the ready-check loop has no slaves to check), one stale master
+// revision, no stale slaves.
 func setupMasterResizeTest() (*redisfailoverv1.RedisFailover, *mRFService.RedisFailoverCheck, *mRFService.RedisFailoverHeal) {
 	rf := generateRF(false, false, false)
+	rf.Spec.Redis.ResizePolicy = testResizePolicy()
 	mrfc := &mRFService.RedisFailoverCheck{}
 	mrfh := &mRFService.RedisFailoverHeal{}
 
@@ -56,10 +61,10 @@ func setupMasterResizeTest() (*redisfailoverv1.RedisFailover, *mRFService.RedisF
 }
 
 // setupSlaveResizeTest is the slave-branch equivalent: one slave pod with a stale revision, so
-// UpdateRedisesPods reaches attemptPodResize with allowEviction=false before ever considering
-// the master.
+// UpdateRedisesPods reaches attemptPodResize before ever considering the master.
 func setupSlaveResizeTest() (*redisfailoverv1.RedisFailover, *mRFService.RedisFailoverCheck, *mRFService.RedisFailoverHeal) {
 	rf := generateRF(false, false, false)
+	rf.Spec.Redis.ResizePolicy = testResizePolicy()
 	mrfc := &mRFService.RedisFailoverCheck{}
 	mrfh := &mRFService.RedisFailoverHeal{}
 
@@ -74,78 +79,8 @@ func setupSlaveResizeTest() (*redisfailoverv1.RedisFailover, *mRFService.RedisFa
 	return rf, mrfc, mrfh
 }
 
-func TestAttemptPodResize_FirstAttempt(t *testing.T) {
+func TestAttemptPodResize_NotYetSubmitted_Submits(t *testing.T) {
 	rf, mrfc, mrfh := setupMasterResizeTest()
-	mrfc.On("GetResizeState", testMasterPod, rf).Once().Return(time.Time{}, "", false, nil)
-	mrfh.On("SetResizeStartedAt", testMasterPod, rf, testSSVersion).Once().Return(nil)
-	mrfh.On("ResizePod", testMasterPod, rf).Once().Return(nil)
-
-	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
-
-	assert.NoError(t, err)
-	mrfc.AssertExpectations(t)
-	mrfh.AssertExpectations(t)
-}
-
-// TestAttemptPodResize_StaleTargetRevisionTreatedAsFresh guards the fix for a leftover
-// resize-started-at annotation from an already-resolved attempt: even though the tracked
-// startedAt is old enough to exceed any timeout, a targetRevision that doesn't match the
-// current ssUR must be treated as a fresh attempt (SetResizeStartedAt + ResizePod), not sent
-// straight to DeletePod.
-func TestAttemptPodResize_StaleTargetRevisionTreatedAsFresh(t *testing.T) {
-	rf, mrfc, mrfh := setupMasterResizeTest()
-	longAgo := time.Now().Add(-20 * time.Minute)
-	mrfc.On("GetResizeState", testMasterPod, rf).Once().Return(longAgo, "some-older-revision", true, nil)
-	mrfh.On("SetResizeStartedAt", testMasterPod, rf, testSSVersion).Once().Return(nil)
-	mrfh.On("ResizePod", testMasterPod, rf).Once().Return(nil)
-
-	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
-
-	assert.NoError(t, err)
-	mrfc.AssertExpectations(t)
-	mrfh.AssertExpectations(t)
-}
-
-func TestAttemptPodResize_TimeoutFallsBackToDelete(t *testing.T) {
-	rf, mrfc, mrfh := setupMasterResizeTest()
-	// masterResizeTimeout is 6 minutes; 10 minutes ago exceeds it.
-	tenMinutesAgo := time.Now().Add(-10 * time.Minute)
-	mrfc.On("GetResizeState", testMasterPod, rf).Once().Return(tenMinutesAgo, testSSVersion, true, nil)
-	mrfh.On("ClearResizeState", testMasterPod, rf).Once().Return(nil)
-	mrfh.On("DeletePod", testMasterPod, rf).Once().Return(nil)
-
-	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
-
-	assert.NoError(t, err)
-	mrfc.AssertExpectations(t)
-	mrfh.AssertExpectations(t)
-}
-
-func TestAttemptPodResize_NoConditionAndResourcesMatch_Succeeds(t *testing.T) {
-	rf, mrfc, mrfh := setupMasterResizeTest()
-	recently := time.Now().Add(-1 * time.Minute)
-	mrfc.On("GetResizeState", testMasterPod, rf).Once().Return(recently, testSSVersion, true, nil)
-	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(false, "", nil)
-	mrfc.On("PodResourcesMatchDesired", testMasterPod, rf).Once().Return(true, nil)
-	mrfh.On("RelabelPodRevision", testMasterPod, rf, testSSVersion).Once().Return(nil)
-	mrfh.On("ClearResizeState", testMasterPod, rf).Once().Return(nil)
-
-	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
-
-	assert.NoError(t, err)
-	mrfc.AssertExpectations(t)
-	mrfh.AssertExpectations(t)
-}
-
-// TestAttemptPodResize_NoConditionButResourcesMismatch_RetriesRatherThanSucceeding guards the
-// fix for treating "no PodResizePending condition" as sufficient proof of success on its own -
-// it's equally true when the resize call never reached the pod at all (e.g. an RBAC
-// rejection). Resources not actually matching must trigger a retry, not RelabelPodRevision.
-func TestAttemptPodResize_NoConditionButResourcesMismatch_RetriesRatherThanSucceeding(t *testing.T) {
-	rf, mrfc, mrfh := setupMasterResizeTest()
-	recently := time.Now().Add(-1 * time.Minute)
-	mrfc.On("GetResizeState", testMasterPod, rf).Once().Return(recently, testSSVersion, true, nil)
-	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(false, "", nil)
 	mrfc.On("PodResourcesMatchDesired", testMasterPod, rf).Once().Return(false, nil)
 	mrfh.On("ResizePod", testMasterPod, rf).Once().Return(nil)
 
@@ -154,16 +89,12 @@ func TestAttemptPodResize_NoConditionButResourcesMismatch_RetriesRatherThanSucce
 	assert.NoError(t, err)
 	mrfc.AssertExpectations(t)
 	mrfh.AssertExpectations(t)
-	// RelabelPodRevision/ClearResizeState must NOT have been called - asserted implicitly:
-	// mrfh has no stub for them, so testify would panic on an unexpected call.
 }
 
-func TestAttemptPodResize_Infeasible_FallsBackToDelete(t *testing.T) {
+func TestAttemptPodResize_AlreadySubmitted_Infeasible_FallsBackToDelete(t *testing.T) {
 	rf, mrfc, mrfh := setupMasterResizeTest()
-	recently := time.Now().Add(-1 * time.Minute)
-	mrfc.On("GetResizeState", testMasterPod, rf).Once().Return(recently, testSSVersion, true, nil)
+	mrfc.On("PodResourcesMatchDesired", testMasterPod, rf).Once().Return(true, nil)
 	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(true, corev1.PodReasonInfeasible, nil)
-	mrfh.On("ClearResizeState", testMasterPod, rf).Once().Return(nil)
 	mrfh.On("DeletePod", testMasterPod, rf).Once().Return(nil)
 
 	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
@@ -173,15 +104,13 @@ func TestAttemptPodResize_Infeasible_FallsBackToDelete(t *testing.T) {
 	mrfh.AssertExpectations(t)
 }
 
-func TestAttemptPodResize_MasterDeferred_TriesEvictionWhenHeadroomNeeded(t *testing.T) {
+func TestAttemptPodResize_AlreadySubmitted_Deferred_FallsBackToDelete(t *testing.T) {
 	rf, mrfc, mrfh := setupMasterResizeTest()
-	recently := time.Now().Add(-1 * time.Minute)
-	mrfc.On("GetResizeState", testMasterPod, rf).Once().Return(recently, testSSVersion, true, nil)
+	mrfc.On("PodResourcesMatchDesired", testMasterPod, rf).Once().Return(true, nil)
 	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(true, corev1.PodReasonDeferred, nil)
-	mrfh.On("ResizePod", testMasterPod, rf).Once().Return(nil)
-	mrfc.On("GetPodNode", testMasterPod, rf).Once().Return("node-1", nil)
-	mrfc.On("ComputeRequiredHeadroom", rf, "node-1", testMasterPod).Once().Return(resource.MustParse("0"), resource.MustParse("2Gi"), nil)
-	mrfh.On("FreeResizeHeadroom", rf, "node-1", mock.Anything, mock.Anything).Once().Return(nil)
+	mrfh.On("DeletePod", testMasterPod, rf).Once().Return(nil)
+	// No eviction machinery exists anymore to stub - Deferred goes straight to delete, same as
+	// Infeasible, with no waiting.
 
 	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
 
@@ -190,18 +119,11 @@ func TestAttemptPodResize_MasterDeferred_TriesEvictionWhenHeadroomNeeded(t *test
 	mrfh.AssertExpectations(t)
 }
 
-// TestAttemptPodResize_MasterDeferred_SkipsEvictionWhenAlreadyFits guards against calling
-// FreeResizeHeadroom needlessly: if both CPU and memory headroom are already satisfied
-// (Sign() <= 0), the kubelet's own retry should be left to catch up on its own.
-func TestAttemptPodResize_MasterDeferred_SkipsEvictionWhenAlreadyFits(t *testing.T) {
+func TestAttemptPodResize_AlreadySubmitted_Success_RelabelsRevision(t *testing.T) {
 	rf, mrfc, mrfh := setupMasterResizeTest()
-	recently := time.Now().Add(-1 * time.Minute)
-	mrfc.On("GetResizeState", testMasterPod, rf).Once().Return(recently, testSSVersion, true, nil)
-	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(true, corev1.PodReasonDeferred, nil)
-	mrfh.On("ResizePod", testMasterPod, rf).Once().Return(nil)
-	mrfc.On("GetPodNode", testMasterPod, rf).Once().Return("node-1", nil)
-	mrfc.On("ComputeRequiredHeadroom", rf, "node-1", testMasterPod).Once().Return(resource.MustParse("0"), resource.MustParse("0"), nil)
-	// FreeResizeHeadroom deliberately not stubbed - an unexpected call here fails the test.
+	mrfc.On("PodResourcesMatchDesired", testMasterPod, rf).Once().Return(true, nil)
+	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(false, "", nil)
+	mrfh.On("RelabelPodRevision", testMasterPod, rf, testSSVersion).Once().Return(nil)
 
 	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
 
@@ -210,19 +132,31 @@ func TestAttemptPodResize_MasterDeferred_SkipsEvictionWhenAlreadyFits(t *testing
 	mrfh.AssertExpectations(t)
 }
 
-// TestAttemptPodResize_SlaveDeferred_NeverEvicts guards the allowEviction=false gate: a
-// Deferred slave resize must skip eviction entirely (no ResizePod re-issue, no
-// ComputeRequiredHeadroom, no FreeResizeHeadroom) and fall straight back to the plain
-// delete-based restart a slave would have gotten anyway.
-func TestAttemptPodResize_SlaveDeferred_NeverEvicts(t *testing.T) {
+// TestUpdateRedisesPods_ResizePolicyUnset_NeverAttemptsResize proves the CRD-field opt-in gate
+// is enforced independently of GetStatefulSetResizeOnly - even though the pending change is
+// resource-only, a RedisFailover without ResizePolicy set must always delete/recreate.
+func TestUpdateRedisesPods_ResizePolicyUnset_NeverAttemptsResize(t *testing.T) {
+	rf, mrfc, mrfh := setupMasterResizeTest()
+	rf.Spec.Redis.ResizePolicy = nil
+	mrfh.On("DeletePod", testMasterPod, rf).Once().Return(nil)
+	// PodResourcesMatchDesired/GetPodResizeCondition deliberately not stubbed - attemptPodResize
+	// must never be reached.
+
+	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
+
+	assert.NoError(t, err)
+	mrfc.AssertExpectations(t)
+	mrfh.AssertExpectations(t)
+}
+
+// TestAttemptPodResize_SlaveUsesIdenticalLogicToMaster documents that the old
+// allowEviction/timeout asymmetry between master and slave is gone - a Deferred slave resize
+// now falls back to delete exactly like a Deferred master resize, via the same shared function.
+func TestAttemptPodResize_SlaveUsesIdenticalLogicToMaster(t *testing.T) {
 	rf, mrfc, mrfh := setupSlaveResizeTest()
-	recently := time.Now().Add(-1 * time.Minute)
-	mrfc.On("GetResizeState", testSlavePod, rf).Once().Return(recently, testSSVersion, true, nil)
+	mrfc.On("PodResourcesMatchDesired", testSlavePod, rf).Once().Return(true, nil)
 	mrfc.On("GetPodResizeCondition", testSlavePod, rf).Once().Return(true, corev1.PodReasonDeferred, nil)
-	mrfh.On("ClearResizeState", testSlavePod, rf).Once().Return(nil)
 	mrfh.On("DeletePod", testSlavePod, rf).Once().Return(nil)
-	// ResizePod (re-issue), GetPodNode, ComputeRequiredHeadroom, FreeResizeHeadroom
-	// deliberately not stubbed - any of them being called would fail the test.
 
 	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
 

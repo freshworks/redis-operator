@@ -72,6 +72,7 @@ type RedisSettings struct {
 	ImagePullSecrets              []corev1.LocalObjectReference     `json:"imagePullSecrets,omitempty"`
 	Tolerations                   []corev1.Toleration               `json:"tolerations,omitempty"`
 	TopologySpreadConstraints     []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
+	ResizePolicy                  []corev1.ContainerResizePolicy    `json:"resizePolicy,omitempty"`
 	NodeSelector                  map[string]string                 `json:"nodeSelector,omitempty"`
 	PodAnnotations                map[string]string                 `json:"podAnnotations,omitempty"`
 	ServiceAnnotations            map[string]string                 `json:"serviceAnnotations,omitempty"`
