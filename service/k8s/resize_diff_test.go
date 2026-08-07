@@ -34,14 +34,14 @@ func TestIsResourceOnlyChange_ResourcesOnlyDiffers(t *testing.T) {
 	newSpec := basePodSpec()
 	newSpec.Containers[0].Resources.Requests[corev1.ResourceMemory] = resource.MustParse("4Gi")
 
-	assert.True(t, isResourceOnlyChange(oldSpec, newSpec, "redis"))
+	assert.True(t, IsResourceOnlyChange(oldSpec, newSpec, "redis"))
 }
 
 func TestIsResourceOnlyChange_NoDiffAtAll(t *testing.T) {
 	oldSpec := basePodSpec()
 	newSpec := basePodSpec()
 
-	assert.True(t, isResourceOnlyChange(oldSpec, newSpec, "redis"))
+	assert.True(t, IsResourceOnlyChange(oldSpec, newSpec, "redis"))
 }
 
 func TestIsResourceOnlyChange_ImageAlsoChanged(t *testing.T) {
@@ -50,7 +50,7 @@ func TestIsResourceOnlyChange_ImageAlsoChanged(t *testing.T) {
 	newSpec.Containers[0].Resources.Requests[corev1.ResourceMemory] = resource.MustParse("4Gi")
 	newSpec.Containers[0].Image = "redis:8"
 
-	assert.False(t, isResourceOnlyChange(oldSpec, newSpec, "redis"))
+	assert.False(t, IsResourceOnlyChange(oldSpec, newSpec, "redis"))
 }
 
 func TestIsResourceOnlyChange_CPUOnlyDiffers(t *testing.T) {
@@ -58,7 +58,7 @@ func TestIsResourceOnlyChange_CPUOnlyDiffers(t *testing.T) {
 	newSpec := basePodSpec()
 	newSpec.Containers[0].Resources.Requests[corev1.ResourceCPU] = resource.MustParse("500m")
 
-	assert.True(t, isResourceOnlyChange(oldSpec, newSpec, "redis"))
+	assert.True(t, IsResourceOnlyChange(oldSpec, newSpec, "redis"))
 }
 
 func TestIsResourceOnlyChange_EnvVarAlsoChanged(t *testing.T) {
@@ -67,7 +67,7 @@ func TestIsResourceOnlyChange_EnvVarAlsoChanged(t *testing.T) {
 	newSpec.Containers[0].Resources.Requests[corev1.ResourceMemory] = resource.MustParse("4Gi")
 	newSpec.Containers[0].Env = []corev1.EnvVar{{Name: "FOO", Value: "bar"}}
 
-	assert.False(t, isResourceOnlyChange(oldSpec, newSpec, "redis"))
+	assert.False(t, IsResourceOnlyChange(oldSpec, newSpec, "redis"))
 }
 
 // TestIsResourceOnlyChange_OnlyExporterResourcesChanged guards the exporter-sidecar gap found
@@ -81,7 +81,7 @@ func TestIsResourceOnlyChange_OnlyExporterResourcesChanged(t *testing.T) {
 	newSpec := basePodSpec()
 	newSpec.Containers[1].Resources.Requests[corev1.ResourceMemory] = resource.MustParse("100Mi")
 
-	assert.False(t, isResourceOnlyChange(oldSpec, newSpec, "redis"))
+	assert.False(t, IsResourceOnlyChange(oldSpec, newSpec, "redis"))
 }
 
 // TestIsResourceOnlyChange_RedisAndExporterBothChanged: even though the redis container's own
@@ -93,5 +93,5 @@ func TestIsResourceOnlyChange_RedisAndExporterBothChanged(t *testing.T) {
 	newSpec.Containers[0].Resources.Requests[corev1.ResourceMemory] = resource.MustParse("4Gi")
 	newSpec.Containers[1].Resources.Requests[corev1.ResourceMemory] = resource.MustParse("100Mi")
 
-	assert.False(t, isResourceOnlyChange(oldSpec, newSpec, "redis"))
+	assert.False(t, IsResourceOnlyChange(oldSpec, newSpec, "redis"))
 }

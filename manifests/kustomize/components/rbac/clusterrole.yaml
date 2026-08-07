@@ -53,6 +53,12 @@ rules:
     verbs:
       - "*"
   - apiGroups:
+      - apps
+    resources:
+      - controllerrevisions
+    verbs:
+      - get
+  - apiGroups:
       - policy
     resources:
       - poddisruptionbudgets

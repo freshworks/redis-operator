@@ -270,26 +270,26 @@ func (_m *RedisFailoverCheck) GetMasterIP(rFailover *v1.RedisFailover) (string, 
 	return r0, r1
 }
 
-func (_m *RedisFailoverCheck) GetStatefulSetResizeOnly(rFailover *v1.RedisFailover) (bool, error) {
-	ret := _m.Called(rFailover)
+func (_m *RedisFailoverCheck) IsPodResourceOnlyChange(podName string, rFailover *v1.RedisFailover) (bool, error) {
+	ret := _m.Called(podName, rFailover)
 
 	if len(ret) == 0 {
-		panic("no return value specified for GetStatefulSetResizeOnly")
+		panic("no return value specified for IsPodResourceOnlyChange")
 	}
 
 	var r0 bool
 	var r1 error
-	if rf, ok := ret.Get(0).(func(*v1.RedisFailover) (bool, error)); ok {
-		return rf(rFailover)
+	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) (bool, error)); ok {
+		return rf(podName, rFailover)
 	}
-	if rf, ok := ret.Get(0).(func(*v1.RedisFailover) bool); ok {
-		r0 = rf(rFailover)
+	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) bool); ok {
+		r0 = rf(podName, rFailover)
 	} else {
 		r0 = ret.Get(0).(bool)
 	}
 
-	if rf, ok := ret.Get(1).(func(*v1.RedisFailover) error); ok {
-		r1 = rf(rFailover)
+	if rf, ok := ret.Get(1).(func(string, *v1.RedisFailover) error); ok {
+		r1 = rf(podName, rFailover)
 	} else {
 		r1 = ret.Error(1)
 	}

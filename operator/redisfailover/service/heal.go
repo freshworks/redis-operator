@@ -32,7 +32,7 @@ type RedisFailoverHeal interface {
 	ResizePod(podName string, rFailover *redisfailoverv1.RedisFailover) error
 	// RelabelPodRevision patches podName's controller-revision-hash label to revision. Only
 	// safe to call once the caller has confirmed the only difference between revisions was
-	// resources and the resize actually succeeded - see GetStatefulSetResizeOnly.
+	// resources and the resize actually succeeded - see IsPodResourceOnlyChange.
 	RelabelPodRevision(podName string, rFailover *redisfailoverv1.RedisFailover, revision string) error
 }
 

@@ -787,6 +787,36 @@ func (_m *Services) GetStatefulSet(namespace string, name string) (*appsv1.State
 	return r0, r1
 }
 
+// GetControllerRevision provides a mock function with given fields: namespace, name
+func (_m *Services) GetControllerRevision(namespace string, name string) (*appsv1.ControllerRevision, error) {
+	ret := _m.Called(namespace, name)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetControllerRevision")
+	}
+
+	var r0 *appsv1.ControllerRevision
+	var r1 error
+	if rf, ok := ret.Get(0).(func(string, string) (*appsv1.ControllerRevision, error)); ok {
+		return rf(namespace, name)
+	}
+	if rf, ok := ret.Get(0).(func(string, string) *appsv1.ControllerRevision); ok {
+		r0 = rf(namespace, name)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*appsv1.ControllerRevision)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(string, string) error); ok {
+		r1 = rf(namespace, name)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // GetStatefulSetPods provides a mock function with given fields: namespace, name
 func (_m *Services) GetStatefulSetPods(namespace string, name string) (*v1.PodList, error) {
 	ret := _m.Called(namespace, name)

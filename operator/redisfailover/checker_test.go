@@ -572,7 +572,6 @@ func TestCheckAndHeal(t *testing.T) {
 				mrfc.On("CheckRedisSlavesReady", "0.0.0.2", rf).Once().Return(true, nil)
 				mrfc.On("CheckRedisSlavesReady", "0.0.0.3", rf).Once().Return(true, nil)
 				mrfc.On("GetStatefulSetUpdateRevision", rf).Once().Return("1", nil)
-				mrfc.On("GetStatefulSetResizeOnly", rf).Once().Return(false, nil)
 				mrfc.On("GetRedisesSlavesPods", rf).Once().Return([]string{}, nil)
 
 				if test.redisSetMasterOnAllOK {
@@ -627,7 +626,6 @@ func TestCheckAndHeal(t *testing.T) {
 					}
 					mrfc.On("GetRedisesIPs", rf).Twice().Return([]string{master}, nil)
 					mrfc.On("GetStatefulSetUpdateRevision", rf).Once().Return("1", nil)
-					mrfc.On("GetStatefulSetResizeOnly", rf).Once().Return(false, nil)
 					mrfc.On("GetRedisesSlavesPods", rf).Once().Return([]string{}, nil)
 					mrfc.On("GetRedisesMasterPod", rf).Once().Return(master, nil)
 					mrfc.On("GetRedisRevisionHash", master, rf).Once().Return("1", nil)
@@ -1162,7 +1160,6 @@ func TestUpdate(t *testing.T) {
 				// Non-resize-only change in this scenario: falls through to the existing
 				// delete-based rollout for any mismatched pod, same as before the in-place
 				// resize feature was added. Called exactly once per UpdateRedisesPods call.
-				mrfc.On("GetStatefulSetResizeOnly", rf).Once().Return(false, nil)
 				mrfc.On("GetRedisesSlavesPods", rf).Once().Return(replicas, nil)
 
 				for _, pod := range test.pods {

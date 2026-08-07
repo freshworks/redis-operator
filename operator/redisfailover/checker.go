@@ -10,8 +10,8 @@ import (
 )
 
 // UpdateRedisesPods deletes Redis pods with a stale StatefulSet revision (OnDelete rollout),
-// or resizes them in place instead when the pending change is resource-only (see
-// k8s.ResizeOnlyAnnotationKey) AND the RedisFailover has opted in via Spec.Redis.ResizePolicy.
+// or resizes them in place instead when that specific pod's own pending change is resource-only
+// (see IsPodResourceOnlyChange) AND the RedisFailover has opted in via Spec.Redis.ResizePolicy.
 // DisableMasterRollout when true, only slave pods are rolled out on spec change (OnDelete); master is not deleted until the flag is removed.
 func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailover) error {
 	redises, err := r.rfChecker.GetRedisesIPs(rf)
@@ -41,12 +41,6 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 		return err
 	}
 
-	resizeOnly, err := r.rfChecker.GetStatefulSetResizeOnly(rf)
-	if err != nil {
-		return err
-	}
-	canResize := resizeOnly && len(rf.Spec.Redis.ResizePolicy) > 0
-
 	redisesPods, err := r.rfChecker.GetRedisesSlavesPods(rf)
 	if err != nil {
 		return err
@@ -59,6 +53,10 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 			return err
 		}
 		if revision != ssUR {
+			canResize, err := r.canResizePod(rf, revision)
+			if err != nil {
+				return err
+			}
 			if !canResize {
 				//Delete pod and wait next round to check if the new one is synced
 				err = r.rfHealer.DeletePod(pod, rf)
@@ -82,6 +80,10 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 			return err
 		}
 		if masterRevision != ssUR {
+			canResize, err := r.canResizePod(rf, masterRevision)
+			if err != nil {
+				return err
+			}
 			if !canResize {
 				err = r.rfHealer.DeletePod(master, rf)
 				if err != nil {
@@ -96,10 +98,24 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 	return nil
 }
 
+// canResizePod reports whether a pod currently on podRevision is eligible for in-place resize:
+// the RedisFailover must have opted in via Spec.Redis.ResizePolicy, and podRevision's own
+// template must differ from the StatefulSet's current template only in "redis" container
+// resources. Checked fresh per pod, per call - not cached - since pods are caught up one at a
+// time across reconciles, and a cached StatefulSet-level signal goes stale (trivially
+// "resource-only") as soon as the StatefulSet itself stops changing, regardless of what any
+// still-stale pod's own pending diff actually contains.
+func (r *RedisFailoverHandler) canResizePod(rf *redisfailoverv1.RedisFailover, podRevision string) (bool, error) {
+	if len(rf.Spec.Redis.ResizePolicy) == 0 {
+		return false, nil
+	}
+	return r.rfChecker.IsPodResourceOnlyChange(podRevision, rf)
+}
+
 // attemptPodResize is reached only once UpdateRedisesPods has confirmed both that this
 // RedisFailover has opted into in-place resize (Spec.Redis.ResizePolicy is non-empty) and that
-// the pending StatefulSet revision change for podName is resource-only (see
-// k8s.ResizeOnlyAnnotationKey). Master and slave follow identical logic.
+// podName's own pending revision change is resource-only (see canResizePod /
+// IsPodResourceOnlyChange). Master and slave follow identical logic.
 //
 // There is no annotation-based tracking of "was a resize already submitted" - the K8s resize
 // subresource (KEP-1287) writes pod.Spec.Containers[].Resources synchronously on a successful

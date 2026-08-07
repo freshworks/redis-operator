@@ -18,7 +18,9 @@ import (
 // This file covers attemptPodResize's branches (checker.go), reached via UpdateRedisesPods so
 // the real master/slave call sites are exercised, not just the function in isolation. Master
 // and slave now share identical logic, and there is no annotation-based state: the pod's live
-// resources (via PodResourcesMatchDesired) and resize condition are the only state consulted.
+// resources (via PodResourcesMatchDesired), resize condition, and its revision's resource-only-
+// ness (via IsPodResourceOnlyChange, keyed by controller-revision-hash) are the only state
+// consulted, checked fresh on every call.
 
 const (
 	testSSVersion = "new-revision"
@@ -39,10 +41,10 @@ func testResizePolicy() []corev1.ContainerResizePolicy {
 	}
 }
 
-// setupMasterResizeTest wires up the mocks needed to reach attemptPodResize for the master pod
-// with a resize-only change already detected and ResizePolicy set on the CR (the opt-in gate) -
-// a single redis IP (so the ready-check loop has no slaves to check), one stale master
-// revision, no stale slaves.
+// setupMasterResizeTest wires up the mocks needed to reach attemptPodResize for the master pod,
+// with ResizePolicy set on the CR (the opt-in gate) and the master's own pending change
+// confirmed resource-only via IsPodResourceOnlyChange - a single redis IP (so the ready-check
+// loop has no slaves to check), one stale master revision, no stale slaves.
 func setupMasterResizeTest() (*redisfailoverv1.RedisFailover, *mRFService.RedisFailoverCheck, *mRFService.RedisFailoverHeal) {
 	rf := generateRF(false, false, false)
 	rf.Spec.Redis.ResizePolicy = testResizePolicy()
@@ -52,10 +54,10 @@ func setupMasterResizeTest() (*redisfailoverv1.RedisFailover, *mRFService.RedisF
 	mrfc.On("GetRedisesIPs", rf).Once().Return([]string{"1.1.1.1"}, nil)
 	mrfc.On("GetMasterIP", rf).Once().Return("1.1.1.1", nil)
 	mrfc.On("GetStatefulSetUpdateRevision", rf).Once().Return(testSSVersion, nil)
-	mrfc.On("GetStatefulSetResizeOnly", rf).Once().Return(true, nil)
 	mrfc.On("GetRedisesSlavesPods", rf).Once().Return([]string{}, nil)
 	mrfc.On("GetRedisesMasterPod", rf).Once().Return(testMasterPod, nil)
 	mrfc.On("GetRedisRevisionHash", testMasterPod, rf).Once().Return("old-revision", nil)
+	mrfc.On("IsPodResourceOnlyChange", "old-revision", rf).Once().Return(true, nil)
 
 	return rf, mrfc, mrfh
 }
@@ -72,9 +74,9 @@ func setupSlaveResizeTest() (*redisfailoverv1.RedisFailover, *mRFService.RedisFa
 	mrfc.On("GetMasterIP", rf).Once().Return("1.1.1.1", nil)
 	mrfc.On("CheckRedisSlavesReady", "2.2.2.2", rf).Once().Return(true, nil)
 	mrfc.On("GetStatefulSetUpdateRevision", rf).Once().Return(testSSVersion, nil)
-	mrfc.On("GetStatefulSetResizeOnly", rf).Once().Return(true, nil)
 	mrfc.On("GetRedisesSlavesPods", rf).Once().Return([]string{testSlavePod}, nil)
 	mrfc.On("GetRedisRevisionHash", testSlavePod, rf).Once().Return("old-revision", nil)
+	mrfc.On("IsPodResourceOnlyChange", "old-revision", rf).Once().Return(true, nil)
 
 	return rf, mrfc, mrfh
 }
@@ -133,14 +135,57 @@ func TestAttemptPodResize_AlreadySubmitted_Success_RelabelsRevision(t *testing.T
 }
 
 // TestUpdateRedisesPods_ResizePolicyUnset_NeverAttemptsResize proves the CRD-field opt-in gate
-// is enforced independently of GetStatefulSetResizeOnly - even though the pending change is
-// resource-only, a RedisFailover without ResizePolicy set must always delete/recreate.
+// is checked first and short-circuits before any API calls - even though the pending change
+// would otherwise be resource-only, a RedisFailover without ResizePolicy set must always
+// delete/recreate, and IsPodResourceOnlyChange must never even be called.
 func TestUpdateRedisesPods_ResizePolicyUnset_NeverAttemptsResize(t *testing.T) {
-	rf, mrfc, mrfh := setupMasterResizeTest()
-	rf.Spec.Redis.ResizePolicy = nil
+	rf := generateRF(false, false, false)
+	// rf.Spec.Redis.ResizePolicy deliberately left unset.
+	mrfc := &mRFService.RedisFailoverCheck{}
+	mrfh := &mRFService.RedisFailoverHeal{}
+
+	mrfc.On("GetRedisesIPs", rf).Once().Return([]string{"1.1.1.1"}, nil)
+	mrfc.On("GetMasterIP", rf).Once().Return("1.1.1.1", nil)
+	mrfc.On("GetStatefulSetUpdateRevision", rf).Once().Return(testSSVersion, nil)
+	mrfc.On("GetRedisesSlavesPods", rf).Once().Return([]string{}, nil)
+	mrfc.On("GetRedisesMasterPod", rf).Once().Return(testMasterPod, nil)
+	mrfc.On("GetRedisRevisionHash", testMasterPod, rf).Once().Return("old-revision", nil)
+	mrfh.On("DeletePod", testMasterPod, rf).Once().Return(nil)
+	// IsPodResourceOnlyChange/PodResourcesMatchDesired/GetPodResizeCondition deliberately not
+	// stubbed - attemptPodResize must never be reached, and the gate must short-circuit before
+	// even checking whether the pod's own diff is resource-only.
+
+	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
+
+	assert.NoError(t, err)
+	mrfc.AssertExpectations(t)
+	mrfh.AssertExpectations(t)
+}
+
+// TestUpdateRedisesPods_NotResourceOnlyForThisPod_FallsBackToDelete guards the fix for a real
+// production bug: IsPodResourceOnlyChange is checked per pod, per call, rather than relying on a
+// single cached StatefulSet-level signal. A previous design cached "was the last StatefulSet
+// write resource-only" once per reconcile and reused it for every pod - which goes stale as
+// soon as the StatefulSet itself stops changing (each remaining stale pod is then, incorrectly,
+// always treated as resource-only, regardless of what its own pending diff actually contains).
+// Here, even though ResizePolicy is set on the CR, this pod's own diff is confirmed
+// non-resource-only, so it must fall back to delete rather than attempt a resize.
+func TestUpdateRedisesPods_NotResourceOnlyForThisPod_FallsBackToDelete(t *testing.T) {
+	rf := generateRF(false, false, false)
+	rf.Spec.Redis.ResizePolicy = testResizePolicy()
+	mrfc := &mRFService.RedisFailoverCheck{}
+	mrfh := &mRFService.RedisFailoverHeal{}
+
+	mrfc.On("GetRedisesIPs", rf).Once().Return([]string{"1.1.1.1"}, nil)
+	mrfc.On("GetMasterIP", rf).Once().Return("1.1.1.1", nil)
+	mrfc.On("GetStatefulSetUpdateRevision", rf).Once().Return(testSSVersion, nil)
+	mrfc.On("GetRedisesSlavesPods", rf).Once().Return([]string{}, nil)
+	mrfc.On("GetRedisesMasterPod", rf).Once().Return(testMasterPod, nil)
+	mrfc.On("GetRedisRevisionHash", testMasterPod, rf).Once().Return("old-revision", nil)
+	mrfc.On("IsPodResourceOnlyChange", "old-revision", rf).Once().Return(false, nil)
 	mrfh.On("DeletePod", testMasterPod, rf).Once().Return(nil)
 	// PodResourcesMatchDesired/GetPodResizeCondition deliberately not stubbed - attemptPodResize
-	// must never be reached.
+	// must never be reached once IsPodResourceOnlyChange reports false for this pod.
 
 	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
 

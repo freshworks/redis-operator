@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	redisfailoverv1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
 	"github.com/freshworks/redis-operator/log"
@@ -40,10 +42,14 @@ type RedisFailoverCheck interface {
 	IsRedisRunning(rFailover *redisfailoverv1.RedisFailover) bool
 	IsSentinelRunning(rFailover *redisfailoverv1.RedisFailover) bool
 	IsClusterRunning(rFailover *redisfailoverv1.RedisFailover) bool
-	// GetStatefulSetResizeOnly returns whether the StatefulSet's most recent update was a
-	// resource-only change, i.e. whether pods can be resized in place instead of deleted for
-	// the currently pending revision change.
-	GetStatefulSetResizeOnly(rFailover *redisfailoverv1.RedisFailover) (bool, error)
+	// IsPodResourceOnlyChange reports whether podRevision - the revision a pod is currently on,
+	// per its controller-revision-hash label - differs from the StatefulSet's current template
+	// only in "redis" container resources, by diffing the ControllerRevision snapshot for that
+	// revision against the current template. Computed fresh per pod (not cached at the
+	// StatefulSet level) because pods are caught up one at a time across reconciles: once the
+	// StatefulSet stops changing, a stale cached signal would trivially read as resource-only
+	// for every remaining pod, regardless of what that pod's own pending diff actually contains.
+	IsPodResourceOnlyChange(podRevision string, rFailover *redisfailoverv1.RedisFailover) (bool, error)
 	// GetPodResizeCondition reports whether podName currently has a PodResizePending
 	// condition and, if so, its reason (corev1.PodReasonDeferred or corev1.PodReasonInfeasible).
 	GetPodResizeCondition(podName string, rFailover *redisfailoverv1.RedisFailover) (found bool, reason string, err error)
@@ -505,9 +511,43 @@ func (r *RedisFailoverChecker) GetStatefulSetUpdateRevision(rFailover *redisfail
 	return ss.Status.UpdateRevision, nil
 }
 
-// GetStatefulSetResizeOnly returns whether the StatefulSet's most recent update was a
-// resource-only change (see k8s.ResizeOnlyAnnotationKey).
-func (r *RedisFailoverChecker) GetStatefulSetResizeOnly(rFailover *redisfailoverv1.RedisFailover) (bool, error) {
+// IsPodResourceOnlyChange reports whether podRevision - the revision a pod is currently on, per
+// its controller-revision-hash label (see GetRedisRevisionHash) - differs from the StatefulSet's
+// current template only in "redis" container resources.
+//
+// Deliberately does not compare the live pod's own spec: a running pod is not a pure
+// instantiation of its template - the scheduler, the ServiceAccount admission controller,
+// DefaultTolerationSeconds, and IRSA-style webhooks (e.g. EKS's pod identity webhook) all add or
+// set fields on every pod that never exist on any template (NodeName, extra Volumes/Env/
+// Tolerations, EnableServiceLinks, Priority, ...). Comparing that against a template would see
+// those as differences on every single pod, forever, regardless of what actually changed.
+//
+// Instead, this fetches the ControllerRevision named podRevision - the exact historical template
+// (metadata + PodSpec) that revision's pods were created from, kept by the StatefulSet
+// controller for exactly this kind of lookup (it's how `kubectl rollout history` works) - and
+// diffs that against the StatefulSet's current template. Both sides are then the same kind of
+// object (a pure template, never touched by pod-creation-time admission), so no noise tolerance
+// of any kind is needed - a real StatefulSet-level diff, not a pod-vs-template approximation.
+func (r *RedisFailoverChecker) IsPodResourceOnlyChange(podRevision string, rFailover *redisfailoverv1.RedisFailover) (bool, error) {
+	revision, err := r.k8sService.GetControllerRevision(rFailover.Namespace, podRevision)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			// The StatefulSet controller prunes old revisions beyond RevisionHistoryLimit - if
+			// podRevision's snapshot is already gone, there's nothing to safely compare against.
+			return false, nil
+		}
+		return false, err
+	}
+	oldTemplate, err := decodeStatefulSetRevisionTemplate(revision)
+	if err != nil {
+		return false, err
+	}
+	if len(oldTemplate.Spec.Containers) == 0 {
+		// Decoding produced an empty template - the ControllerRevision's Data didn't have the
+		// expected shape. Don't guess either way.
+		return false, nil
+	}
+
 	ss, err := r.k8sService.GetStatefulSet(rFailover.Namespace, GetRedisName(rFailover))
 	if err != nil {
 		return false, err
@@ -515,7 +555,26 @@ func (r *RedisFailoverChecker) GetStatefulSetResizeOnly(rFailover *redisfailover
 	if ss == nil {
 		return false, errors.New("statefulSet not found")
 	}
-	return ss.Annotations[k8s.ResizeOnlyAnnotationKey] == "true", nil
+
+	return k8s.IsResourceOnlyChange(&oldTemplate.Spec, &ss.Spec.Template.Spec, "redis"), nil
+}
+
+// statefulSetRevisionData mirrors the shape the StatefulSet controller encodes into a
+// ControllerRevision's Data field: a strategic-merge "replace" patch carrying the full template
+// verbatim (not a diff against a prior revision). The "$patch" key is ignored on decode - Go's
+// json.Unmarshal skips struct fields with no matching tag.
+type statefulSetRevisionData struct {
+	Spec struct {
+		Template corev1.PodTemplateSpec `json:"template"`
+	} `json:"spec"`
+}
+
+func decodeStatefulSetRevisionTemplate(revision *appsv1.ControllerRevision) (*corev1.PodTemplateSpec, error) {
+	var data statefulSetRevisionData
+	if err := json.Unmarshal(revision.Data.Raw, &data); err != nil {
+		return nil, fmt.Errorf("decoding controllerrevision %s: %w", revision.Name, err)
+	}
+	return &data.Spec.Template, nil
 }
 
 // GetPodResizeCondition reports whether podName currently has a PodResizePending condition

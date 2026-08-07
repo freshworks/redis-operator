@@ -21,12 +21,7 @@ import (
 	"github.com/freshworks/redis-operator/metrics"
 )
 
-// ResizeOnlyAnnotationKey marks a StatefulSet update as changing only container
-// resources (CPU/memory) versus the previously stored template. UpdateRedisesPods
-// reads this to decide whether the master pod can be resized in place instead of deleted.
-const ResizeOnlyAnnotationKey = "redis-failover.freshworks.com/resize-only"
-
-// isResourceOnlyChange reports whether the only difference between oldSpec and newSpec is
+// IsResourceOnlyChange reports whether the only difference between oldSpec and newSpec is
 // containerName's resource requests/limits, by neutralizing that one field on copies of both
 // (only for containerName, not every container) and comparing everything else. Uses
 // apiequality.Semantic.DeepEqual rather than reflect.DeepEqual because raw reflection can
@@ -39,7 +34,12 @@ const ResizeOnlyAnnotationKey = "redis-failover.freshworks.com/resize-only"
 // apply it - the resize would silently no-op for that container while still being marked
 // successful. Requiring every other container to match exactly means such a change correctly
 // falls through to the existing delete-based path instead.
-func isResourceOnlyChange(oldSpec, newSpec *corev1.PodSpec, containerName string) bool {
+//
+// Callers must pass two objects that have both already been through API server defaulting
+// (e.g. a live Pod's spec and a stored StatefulSet's template spec) - comparing a freshly-built,
+// never-submitted Go struct against either would show spurious differences from the defaulting
+// gap alone, regardless of what actually changed.
+func IsResourceOnlyChange(oldSpec, newSpec *corev1.PodSpec, containerName string) bool {
 	oldCopy := oldSpec.DeepCopy()
 	newCopy := newSpec.DeepCopy()
 	for i := range oldCopy.Containers {
@@ -64,6 +64,14 @@ type StatefulSet interface {
 	CreateOrUpdateStatefulSet(namespace string, statefulSet *appsv1.StatefulSet) error
 	DeleteStatefulSet(namespace string, name string) error
 	ListStatefulSets(namespace string) (*appsv1.StatefulSetList, error)
+	// GetControllerRevision returns the named ControllerRevision - for a StatefulSet, this is
+	// the exact historical template (metadata + PodSpec) some revision of its pods was created
+	// from, keyed by the same name every pod on that revision carries in its
+	// controller-revision-hash label. Unlike a live pod's own spec, this is a pure template
+	// snapshot that never went through pod-creation-time admission (scheduler, ServiceAccount
+	// token injection, IRSA-style webhooks, etc.), so it's directly comparable to the
+	// StatefulSet's current template with no admission-noise tolerance needed.
+	GetControllerRevision(namespace, name string) (*appsv1.ControllerRevision, error)
 }
 
 // StatefulSetService is the service account service implementation using API calls to kubernetes.
@@ -206,26 +214,6 @@ func (s *StatefulSetService) CreateOrUpdateStatefulSet(namespace string, statefu
 	// set stored.volumeClaimTemplates
 	statefulSet.Spec.VolumeClaimTemplates = storedStatefulSet.Spec.VolumeClaimTemplates
 
-	// Dry-run the update first so the resource-only diff compares two objects that have both
-	// been through API server defaulting. storedStatefulSet came from a Get() and already has
-	// implicit defaults (terminationMessagePath, port protocol, etc.) filled in; statefulSet is
-	// a freshly-built, never-submitted Go struct that doesn't. Diffing them directly would show
-	// spurious differences from that defaulting gap alone, regardless of what actually changed.
-	dryRunResult, err := s.kubeClient.AppsV1().StatefulSets(namespace).Update(context.TODO(), statefulSet, metav1.UpdateOptions{
-		DryRun: []string{metav1.DryRunAll},
-	})
-	if err != nil {
-		return err
-	}
-
-	// "redis" is the only container the in-place resize path knows how to resize
-	// (see ResizePod/PodResourcesMatchDesired) - keep this in sync with those.
-	resourceOnlyChange := isResourceOnlyChange(&storedStatefulSet.Spec.Template.Spec, &dryRunResult.Spec.Template.Spec, "redis")
-	if statefulSet.Annotations == nil {
-		statefulSet.Annotations = map[string]string{}
-	}
-	statefulSet.Annotations[ResizeOnlyAnnotationKey] = strconv.FormatBool(resourceOnlyChange)
-
 	statefulSet.Annotations = util.MergeAnnotations(storedStatefulSet.Annotations, statefulSet.Annotations)
 	return s.UpdateStatefulSet(namespace, statefulSet)
 }
@@ -243,4 +231,11 @@ func (s *StatefulSetService) ListStatefulSets(namespace string) (*appsv1.Statefu
 	stsList, err := s.kubeClient.AppsV1().StatefulSets(namespace).List(context.TODO(), metav1.ListOptions{})
 	recordMetrics(namespace, "StatefulSet", metrics.NOT_APPLICABLE, "LIST", err, s.metricsRecorder)
 	return stsList, err
+}
+
+// GetControllerRevision will retrieve the requested ControllerRevision based on namespace and name
+func (s *StatefulSetService) GetControllerRevision(namespace, name string) (*appsv1.ControllerRevision, error) {
+	revision, err := s.kubeClient.AppsV1().ControllerRevisions(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	recordMetrics(namespace, "ControllerRevision", name, "GET", err, s.metricsRecorder)
+	return revision, err
 }
