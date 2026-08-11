@@ -50,9 +50,10 @@ type RedisFailoverCheck interface {
 	// StatefulSet stops changing, a stale cached signal would trivially read as resource-only
 	// for every remaining pod, regardless of what that pod's own pending diff actually contains.
 	IsPodResourceOnlyChange(podRevision string, rFailover *redisfailoverv1.RedisFailover) (bool, error)
-	// GetPodResizeCondition reports whether podName currently has a PodResizePending
-	// condition and, if so, its reason (corev1.PodReasonDeferred or corev1.PodReasonInfeasible).
-	GetPodResizeCondition(podName string, rFailover *redisfailoverv1.RedisFailover) (found bool, reason string, err error)
+	// GetPodResizeCondition reports whether podName currently has a PodResizePending or
+	// PodResizeInProgress condition and, if so, which type and reason (e.g.
+	// corev1.PodReasonDeferred, corev1.PodReasonInfeasible, or corev1.PodReasonError).
+	GetPodResizeCondition(podName string, rFailover *redisfailoverv1.RedisFailover) (found bool, condType corev1.PodConditionType, reason string, err error)
 	// PodResourcesMatchDesired reports whether podName's redis container currently has the
 	// same resources as rFailover.Spec.Redis.Resources. The absence of a PodResizePending
 	// condition alone doesn't prove a resize actually applied - it's also true when the
@@ -528,19 +529,35 @@ func (r *RedisFailoverChecker) GetStatefulSetUpdateRevision(rFailover *redisfail
 // diffs that against the StatefulSet's current template. Both sides are then the same kind of
 // object (a pure template, never touched by pod-creation-time admission), so no noise tolerance
 // of any kind is needed - a real StatefulSet-level diff, not a pod-vs-template approximation.
+//
+// Distinguishes two different kinds of "can't tell": a revision that's been pruned beyond
+// RevisionHistoryLimit, or a ControllerRevision whose Data doesn't decode into a usable
+// template, is *permanently* unknowable - retrying changes nothing, so these fall back to
+// (false, nil), routing the caller to the pre-existing, dependency-free DeletePod path exactly
+// as if this feature didn't exist. A transient failure on either Get call (a timeout, rate
+// limiting, a dropped connection) is a different thing entirely: it's very likely to resolve on
+// its own, and the pod itself did nothing wrong - forcing a disruptive delete (a Sentinel
+// failover, if this is the master) over a blip that had nothing to do with the pod's actual
+// state would be a bad trade for something that would probably have succeeded on the very next
+// reconcile. So a transient error is returned as a real error instead, and it's on the caller
+// (UpdateRedisesPods) to skip this pod for the current reconcile - no delete, no resize - and
+// let the normal resync loop try again shortly.
 func (r *RedisFailoverChecker) IsPodResourceOnlyChange(podRevision string, rFailover *redisfailoverv1.RedisFailover) (bool, error) {
 	revision, err := r.k8sService.GetControllerRevision(rFailover.Namespace, podRevision)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
-			// The StatefulSet controller prunes old revisions beyond RevisionHistoryLimit - if
-			// podRevision's snapshot is already gone, there's nothing to safely compare against.
+			// Already pruned - there will never be anything to compare against, no matter how
+			// many times this is retried.
 			return false, nil
 		}
-		return false, err
+		return false, fmt.Errorf("fetching controllerrevision %s: %w", podRevision, err)
 	}
 	oldTemplate, err := decodeStatefulSetRevisionTemplate(revision)
 	if err != nil {
-		return false, err
+		// Malformed data on an immutable object - not transient, retrying returns the exact
+		// same bytes every time.
+		r.logger.WithField("redisfailover", rFailover.ObjectMeta.Name).WithField("revision", podRevision).Warningf("could not decode controllerrevision, falling back to delete: %v", err)
+		return false, nil
 	}
 	if len(oldTemplate.Spec.Containers) == 0 {
 		// Decoding produced an empty template - the ControllerRevision's Data didn't have the
@@ -550,10 +567,10 @@ func (r *RedisFailoverChecker) IsPodResourceOnlyChange(podRevision string, rFail
 
 	ss, err := r.k8sService.GetStatefulSet(rFailover.Namespace, GetRedisName(rFailover))
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("fetching statefulset %s: %w", GetRedisName(rFailover), err)
 	}
 	if ss == nil {
-		return false, errors.New("statefulSet not found")
+		return false, nil
 	}
 
 	return k8s.IsResourceOnlyChange(&oldTemplate.Spec, &ss.Spec.Template.Spec, "redis"), nil
@@ -577,22 +594,39 @@ func decodeStatefulSetRevisionTemplate(revision *appsv1.ControllerRevision) (*co
 	return &data.Spec.Template, nil
 }
 
-// GetPodResizeCondition reports whether podName currently has a PodResizePending condition
-// and, if so, its reason.
-func (r *RedisFailoverChecker) GetPodResizeCondition(podName string, rFailover *redisfailoverv1.RedisFailover) (bool, string, error) {
+// GetPodResizeCondition reports whether podName currently has a PodResizePending or
+// PodResizeInProgress condition and, if so, which type and reason.
+//
+// Checking only PodResizePending is not enough to tell a finished resize apart from one the
+// kubelet is still actively applying: ResizePod writes the desired spec into pod.Spec
+// synchronously, but PodResizePending only ever appears when the kubelet can't proceed
+// immediately (Deferred/Infeasible) - once it *can* proceed, PodResizePending never appears at
+// all, and the kubelet instead sets PodResizeInProgress for the entire time it's allocating and
+// actuating the change (which can be non-trivial, e.g. a container restart under
+// RestartContainer policy). Treating "no PodResizePending" as sufficient proof of success would
+// let a pod get relabeled as fully resized while the kubelet is still in the middle of it.
+// PodResizePending is checked first: per its own docs, if both conditions are present it means
+// a new resize was requested mid-actuation of a previous one, which should be handled the same
+// way any other Deferred/Infeasible condition is.
+func (r *RedisFailoverChecker) GetPodResizeCondition(podName string, rFailover *redisfailoverv1.RedisFailover) (bool, corev1.PodConditionType, string, error) {
 	pod, err := r.k8sService.GetPod(rFailover.Namespace, podName)
 	if err != nil {
-		return false, "", err
+		return false, "", "", err
 	}
 	if pod == nil {
-		return false, "", errors.New("pod not found")
+		return false, "", "", errors.New("pod not found")
 	}
 	for _, cond := range pod.Status.Conditions {
-		if cond.Type == corev1.PodResizePending {
-			return true, cond.Reason, nil
+		if cond.Type == corev1.PodResizePending && cond.Status == corev1.ConditionTrue {
+			return true, corev1.PodResizePending, cond.Reason, nil
 		}
 	}
-	return false, "", nil
+	for _, cond := range pod.Status.Conditions {
+		if cond.Type == corev1.PodResizeInProgress && cond.Status == corev1.ConditionTrue {
+			return true, corev1.PodResizeInProgress, cond.Reason, nil
+		}
+	}
+	return false, "", "", nil
 }
 
 // PodResourcesMatchDesired reports whether podName's redis container currently has the same
@@ -626,12 +660,25 @@ func (r *RedisFailoverChecker) PodResourcesMatchDesired(podName string, rFailove
 // resourceListMatches reports whether actual has the same quantity as desired for every
 // resource name present in desired. A name in desired but absent from actual is a mismatch
 // (resize hasn't applied); a name present in actual but not in desired (e.g. LimitRange
-// defaulting) is ignored.
+// defaulting an unrelated resource like ephemeral-storage) is ignored.
+//
+// cpu and memory are the exception: they're the only two resource types KEP-1287 resize can
+// actually manage, so a value the CR used to ask for and has since removed (e.g. a dropped
+// memory limit) must not be silently treated as already matching just because desired no
+// longer mentions it - actual still carries the stale value until a real resize (or delete)
+// propagates the removal. Every other resource name keeps the tolerant, desired-only check.
 func resourceListMatches(actual, desired corev1.ResourceList) bool {
 	for name, desiredQty := range desired {
 		actualQty, ok := actual[name]
 		if !ok || actualQty.Cmp(desiredQty) != 0 {
 			return false
+		}
+	}
+	for _, name := range [...]corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
+		if _, inActual := actual[name]; inActual {
+			if _, inDesired := desired[name]; !inDesired {
+				return false
+			}
 		}
 	}
 	return true

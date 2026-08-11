@@ -7,6 +7,8 @@ import (
 
 	time "time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	v1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
 )
 
@@ -297,7 +299,7 @@ func (_m *RedisFailoverCheck) IsPodResourceOnlyChange(podName string, rFailover 
 	return r0, r1
 }
 
-func (_m *RedisFailoverCheck) GetPodResizeCondition(podName string, rFailover *v1.RedisFailover) (bool, string, error) {
+func (_m *RedisFailoverCheck) GetPodResizeCondition(podName string, rFailover *v1.RedisFailover) (bool, corev1.PodConditionType, string, error) {
 	ret := _m.Called(podName, rFailover)
 
 	if len(ret) == 0 {
@@ -305,9 +307,10 @@ func (_m *RedisFailoverCheck) GetPodResizeCondition(podName string, rFailover *v
 	}
 
 	var r0 bool
-	var r1 string
-	var r2 error
-	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) (bool, string, error)); ok {
+	var r1 corev1.PodConditionType
+	var r2 string
+	var r3 error
+	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) (bool, corev1.PodConditionType, string, error)); ok {
 		return rf(podName, rFailover)
 	}
 	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) bool); ok {
@@ -316,19 +319,25 @@ func (_m *RedisFailoverCheck) GetPodResizeCondition(podName string, rFailover *v
 		r0 = ret.Get(0).(bool)
 	}
 
-	if rf, ok := ret.Get(1).(func(string, *v1.RedisFailover) string); ok {
+	if rf, ok := ret.Get(1).(func(string, *v1.RedisFailover) corev1.PodConditionType); ok {
 		r1 = rf(podName, rFailover)
 	} else {
-		r1 = ret.Get(1).(string)
+		r1 = ret.Get(1).(corev1.PodConditionType)
 	}
 
-	if rf, ok := ret.Get(2).(func(string, *v1.RedisFailover) error); ok {
+	if rf, ok := ret.Get(2).(func(string, *v1.RedisFailover) string); ok {
 		r2 = rf(podName, rFailover)
 	} else {
-		r2 = ret.Error(2)
+		r2 = ret.Get(2).(string)
 	}
 
-	return r0, r1, r2
+	if rf, ok := ret.Get(3).(func(string, *v1.RedisFailover) error); ok {
+		r3 = rf(podName, rFailover)
+	} else {
+		r3 = ret.Error(3)
+	}
+
+	return r0, r1, r2, r3
 }
 
 func (_m *RedisFailoverCheck) PodResourcesMatchDesired(podName string, rFailover *v1.RedisFailover) (bool, error) {

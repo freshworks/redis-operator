@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	redisfailoverv1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
 	"github.com/freshworks/redis-operator/metrics"
 )
@@ -55,7 +57,11 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 		if revision != ssUR {
 			canResize, err := r.canResizePod(rf, revision)
 			if err != nil {
-				return err
+				// A transient failure while checking resize eligibility, not a confirmed
+				// answer either way - skip this pod for this reconcile rather than forcing a
+				// disruptive delete over something that would likely succeed shortly.
+				r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("pod", pod).Warningf("could not determine resize eligibility, will retry next reconcile: %v", err)
+				return nil
 			}
 			if !canResize {
 				//Delete pod and wait next round to check if the new one is synced
@@ -82,7 +88,8 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 		if masterRevision != ssUR {
 			canResize, err := r.canResizePod(rf, masterRevision)
 			if err != nil {
-				return err
+				r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("pod", master).Warningf("could not determine resize eligibility, will retry next reconcile: %v", err)
+				return nil
 			}
 			if !canResize {
 				err = r.rfHealer.DeletePod(master, rf)
@@ -105,6 +112,11 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 // time across reconciles, and a cached StatefulSet-level signal goes stale (trivially
 // "resource-only") as soon as the StatefulSet itself stops changing, regardless of what any
 // still-stale pod's own pending diff actually contains.
+//
+// A non-nil error here means genuinely transient and retryable - not a confirmed answer either
+// way - see IsPodResourceOnlyChange. Callers must not treat that as "not resizable" (which would
+// force a disruptive delete over a passing blip); they should skip this pod for the current
+// reconcile and let it be re-evaluated fresh next time.
 func (r *RedisFailoverHandler) canResizePod(rf *redisfailoverv1.RedisFailover, podRevision string) (bool, error) {
 	if len(rf.Spec.Redis.ResizePolicy) == 0 {
 		return false, nil
@@ -120,10 +132,13 @@ func (r *RedisFailoverHandler) canResizePod(rf *redisfailoverv1.RedisFailover, p
 // There is no annotation-based tracking of "was a resize already submitted" - the K8s resize
 // subresource (KEP-1287) writes pod.Spec.Containers[].Resources synchronously on a successful
 // PATCH, so PodResourcesMatchDesired doubles as that signal: false means "not submitted yet for
-// the current desired spec, submit now"; true means "already submitted, check
-// PodResizePending for the outcome." This makes the flow exactly two reconcile passes: pass N
-// submits, pass N+1 observes matches == true and checks the outcome. Infeasible and Deferred
-// both fall straight back to delete - no eviction, no waiting for Deferred to resolve.
+// the current desired spec, submit now"; true means "already submitted, check the pod's resize
+// condition for the outcome." Infeasible and Deferred both fall straight back to delete - no
+// eviction, no waiting for Deferred to resolve. PodResizeInProgress means the kubelet is still
+// actively allocating/actuating the change (which can take real time, e.g. a container restart
+// under RestartContainer policy) - spec already matching desired is not by itself proof the
+// resize has finished, so this waits rather than relabeling early, unless the kubelet itself
+// reports the actuation errored.
 func (r *RedisFailoverHandler) attemptPodResize(rf *redisfailoverv1.RedisFailover, podName, ssUR string) error {
 	matches, err := r.rfChecker.PodResourcesMatchDesired(podName, rf)
 	if err != nil {
@@ -133,19 +148,24 @@ func (r *RedisFailoverHandler) attemptPodResize(rf *redisfailoverv1.RedisFailove
 		return r.rfHealer.ResizePod(podName, rf)
 	}
 
-	found, reason, err := r.rfChecker.GetPodResizeCondition(podName, rf)
+	found, condType, reason, err := r.rfChecker.GetPodResizeCondition(podName, rf)
 	if err != nil {
 		return err
 	}
 	if found {
-		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("pod", podName).Warningf("resize %s, falling back to delete", reason)
+		if condType == corev1.PodResizeInProgress && reason != corev1.PodReasonError {
+			// Still being actuated by the kubelet, no error - wait for the next reconcile
+			// rather than treating "no PodResizePending" as done.
+			return nil
+		}
+		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("pod", podName).Warningf("resize %s (%s), falling back to delete", condType, reason)
 		return r.rfHealer.DeletePod(podName, rf)
 	}
 
-	// No pending condition and resources already match desired: the resize succeeded. Close
-	// the controller-revision-hash bookkeeping gap - a resize never updates that label on its
-	// own, so without this the next reconcile would see this pod's revision != ssUR again and
-	// re-enter this whole function.
+	// No resize condition at all and resources already match desired: the resize succeeded.
+	// Close the controller-revision-hash bookkeeping gap - a resize never updates that label on
+	// its own, so without this the next reconcile would see this pod's revision != ssUR again
+	// and re-enter this whole function.
 	return r.rfHealer.RelabelPodRevision(podName, rf, ssUR)
 }
 

@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -69,11 +70,33 @@ func TestResourceListMatches_EquivalentQuantitiesDifferentRepresentation(t *test
 	assert.True(t, resourceListMatches(actual, desired))
 }
 
-func TestResourceListMatches_EmptyDesiredAlwaysMatches(t *testing.T) {
-	actual := corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("2Gi")}
+func TestResourceListMatches_BothEmptyMatches(t *testing.T) {
+	// A container with no requests/limits configured at all on either side (no LimitRange, no
+	// CR-level ask) is a genuine match - nothing to compare, nothing stale.
+	assert.True(t, resourceListMatches(corev1.ResourceList{}, corev1.ResourceList{}))
+}
+
+func TestResourceListMatches_NonResizableExtraKeyStillIgnoredWhenDesiredEmpty(t *testing.T) {
+	// Unlike cpu/memory, an unrelated resource type (e.g. LimitRange-injected
+	// ephemeral-storage) present only on actual is still tolerated even when desired is
+	// entirely empty - this feature only ever manages cpu/memory, so it has no opinion on
+	// anything else.
+	actual := corev1.ResourceList{corev1.ResourceEphemeralStorage: resource.MustParse("1Gi")}
 	desired := corev1.ResourceList{}
 
 	assert.True(t, resourceListMatches(actual, desired))
+}
+
+// TestResourceListMatches_MemoryRemovedFromDesiredButStillOnActual_ReportsMismatch guards the
+// fix for a real gap: if the CR drops a resource key it used to specify (e.g. removing a memory
+// limit), the old desired-keys-only comparison would treat that as an immediate match - since
+// desired no longer mentions memory, nothing was ever checked - permanently leaving the pod's
+// stale value in place. cpu/memory must now agree on presence, not just on value when present.
+func TestResourceListMatches_MemoryRemovedFromDesiredButStillOnActual_ReportsMismatch(t *testing.T) {
+	actual := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1"), corev1.ResourceMemory: resource.MustParse("2Gi")}
+	desired := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")}
+
+	assert.False(t, resourceListMatches(actual, desired))
 }
 
 // IsPodResourceOnlyChange diffs the ControllerRevision snapshot for a pod's current revision
@@ -193,5 +216,45 @@ func TestIsPodResourceOnlyChange_RevisionPruned_ReportsFalseNotError(t *testing.
 	got, err := checker.IsPodResourceOnlyChange(oldRevisionName, rf)
 
 	assert.NoError(t, err)
+	assert.False(t, got)
+}
+
+// TestIsPodResourceOnlyChange_TransientControllerRevisionError_PropagatesForRetry and
+// TestIsPodResourceOnlyChange_TransientStatefulSetError_PropagatesForRetry guard the distinction
+// between "permanently unknowable" (pruned revision, malformed data - falls back to false) and
+// "transiently unknowable" (a timeout, throttling, a dropped connection - genuinely retryable).
+// A transient failure must surface as a real error rather than resolving to (false, nil): the
+// caller (UpdateRedisesPods) treats an error here as "skip this pod, retry next reconcile," not
+// as "not resizable" - collapsing the two would force a disruptive delete (a Sentinel failover,
+// for the master) over a blip that had nothing to do with the pod and would likely have
+// resolved on its own by the next reconcile.
+
+func TestIsPodResourceOnlyChange_TransientControllerRevisionError_PropagatesForRetry(t *testing.T) {
+	rf := newTestRedisFailover()
+	oldRevisionName := GetRedisName(rf) + "-oldrevision"
+	ms := &mK8SService.Services{}
+	ms.On("GetControllerRevision", rf.Namespace, oldRevisionName).Once().
+		Return(nil, errors.New("etcdserver: request timed out"))
+	checker := NewRedisFailoverChecker(ms, nil, log.Dummy, metrics.Dummy)
+
+	got, err := checker.IsPodResourceOnlyChange(oldRevisionName, rf)
+
+	assert.Error(t, err)
+	assert.False(t, got)
+}
+
+func TestIsPodResourceOnlyChange_TransientStatefulSetError_PropagatesForRetry(t *testing.T) {
+	rf := newTestRedisFailover()
+	ssName := GetRedisName(rf)
+	oldRevisionName := ssName + "-oldrevision"
+	revision := newTestControllerRevision(oldRevisionName, rf.Namespace, "redis:7", "1Gi")
+	ms := &mK8SService.Services{}
+	ms.On("GetControllerRevision", rf.Namespace, oldRevisionName).Once().Return(revision, nil)
+	ms.On("GetStatefulSet", rf.Namespace, ssName).Once().Return(nil, errors.New("etcdserver: request timed out"))
+	checker := NewRedisFailoverChecker(ms, nil, log.Dummy, metrics.Dummy)
+
+	got, err := checker.IsPodResourceOnlyChange(oldRevisionName, rf)
+
+	assert.Error(t, err)
 	assert.False(t, got)
 }
