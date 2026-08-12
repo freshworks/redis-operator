@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"k8s.io/apimachinery/pkg/types"
 
@@ -27,6 +28,9 @@ type Pod interface {
 	UpdatePodLabels(namespace, podName string, labels map[string]string) error
 	UpdatePodAnnotations(namespace, podName string, annotations map[string]string) error
 	RemovePodAnnotation(namespace, podName string, annotationKey string) error
+	// ResizePod applies new resource requests/limits to the named container of a running pod
+	// via the resize subresource, without recreating the pod.
+	ResizePod(namespace, podName, containerName string, resources corev1.ResourceRequirements) error
 }
 
 // PodService is the pod service implementation using API calls to kubernetes.
@@ -186,4 +190,35 @@ func (p *PodService) RemovePodAnnotation(namespace, podName string, annotationKe
 		// Remove the annotation if it exists
 		delete(podAnnotations, annotationKey)
 	})
+}
+
+// ResizePod applies new resource requests/limits to the named container of a running pod
+// via the resize subresource (stable since Kubernetes v1.35), without recreating the pod.
+func (p *PodService) ResizePod(namespace, podName, containerName string, resources corev1.ResourceRequirements) error {
+	pod, err := p.GetPod(namespace, podName)
+	if err != nil {
+		return err
+	}
+
+	updated := pod.DeepCopy()
+	found := false
+	for i := range updated.Spec.Containers {
+		if updated.Spec.Containers[i].Name == containerName {
+			updated.Spec.Containers[i].Resources = resources
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("container %q not found in pod %q", containerName, podName)
+	}
+
+	_, err = p.kubeClient.CoreV1().Pods(namespace).UpdateResize(context.TODO(), podName, updated, metav1.UpdateOptions{})
+	recordMetrics(namespace, "Pod", podName, "RESIZE", err, p.metricsRecorder)
+	if err != nil {
+		p.logger.Errorf("Resize pod failed, namespace: %s, pod name: %s, error: %v", namespace, podName, err)
+		return err
+	}
+	p.logger.WithField("namespace", namespace).WithField("pod", podName).Debugf("pod resize requested")
+	return nil
 }

@@ -387,7 +387,23 @@ func (_m *Services) DeletePod(namespace string, name string) error {
 	return r0
 }
 
-// DeletePodDisruptionBudget provides a mock function with given fields: namespace, name
+func (_m *Services) ResizePod(namespace string, podName string, containerName string, resources v1.ResourceRequirements) error {
+	ret := _m.Called(namespace, podName, containerName, resources)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ResizePod")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(string, string, string, v1.ResourceRequirements) error); ok {
+		r0 = rf(namespace, podName, containerName, resources)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 func (_m *Services) DeletePodDisruptionBudget(namespace string, name string) error {
 	ret := _m.Called(namespace, name)
 
@@ -759,6 +775,36 @@ func (_m *Services) GetStatefulSet(namespace string, name string) (*appsv1.State
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*appsv1.StatefulSet)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(string, string) error); ok {
+		r1 = rf(namespace, name)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// GetControllerRevision provides a mock function with given fields: namespace, name
+func (_m *Services) GetControllerRevision(namespace string, name string) (*appsv1.ControllerRevision, error) {
+	ret := _m.Called(namespace, name)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetControllerRevision")
+	}
+
+	var r0 *appsv1.ControllerRevision
+	var r1 error
+	if rf, ok := ret.Get(0).(func(string, string) (*appsv1.ControllerRevision, error)); ok {
+		return rf(namespace, name)
+	}
+	if rf, ok := ret.Get(0).(func(string, string) *appsv1.ControllerRevision); ok {
+		r0 = rf(namespace, name)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*appsv1.ControllerRevision)
 		}
 	}
 

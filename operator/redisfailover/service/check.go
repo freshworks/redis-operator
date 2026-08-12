@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	redisfailoverv1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
 	"github.com/freshworks/redis-operator/log"
@@ -40,6 +42,17 @@ type RedisFailoverCheck interface {
 	IsRedisRunning(rFailover *redisfailoverv1.RedisFailover) bool
 	IsSentinelRunning(rFailover *redisfailoverv1.RedisFailover) bool
 	IsClusterRunning(rFailover *redisfailoverv1.RedisFailover) bool
+	// IsPodResourceOnlyChange reports whether podRevision differs from the StatefulSet's current
+	// template only in "redis" container resources. Checked fresh per pod, not cached, since a
+	// StatefulSet-level signal would go stale once the StatefulSet itself stops changing.
+	IsPodResourceOnlyChange(podRevision string, rFailover *redisfailoverv1.RedisFailover) (bool, error)
+	// GetPodResizeCondition reports podName's current PodResizePending or PodResizeInProgress
+	// condition (nil if neither is present).
+	GetPodResizeCondition(podName string, rFailover *redisfailoverv1.RedisFailover) (*corev1.PodCondition, error)
+	// PodResourcesMatchDesired reports whether podName's redis container currently has the same
+	// resources as rFailover.Spec.Redis.Resources. Not sufficient proof of a successful resize
+	// on its own - also true if the resize call never reached the pod (e.g. an RBAC rejection).
+	PodResourcesMatchDesired(podName string, rFailover *redisfailoverv1.RedisFailover) (bool, error)
 }
 
 // RedisFailoverChecker is our implementation of RedisFailoverCheck interface
@@ -490,6 +503,134 @@ func (r *RedisFailoverChecker) GetStatefulSetUpdateRevision(rFailover *redisfail
 	}
 
 	return ss.Status.UpdateRevision, nil
+}
+
+// IsPodResourceOnlyChange reports whether podRevision differs from the StatefulSet's current
+// template only in "redis" container resources.
+//
+// Compares ControllerRevision snapshots rather than the live pod's own spec, because a running
+// pod picks up fields no template ever has (scheduler/admission-injected NodeName, tolerations,
+// service account volumes, etc.) that would otherwise look like differences forever.
+//
+// A permanently unknowable result (revision pruned past RevisionHistoryLimit, or undecodable
+// data) falls back to (false, nil) - same as if this feature didn't exist. A transient Get
+// failure is returned as a real error instead, so the caller retries rather than treating it as
+// a confirmed "no" and deleting the pod over an unrelated blip.
+func (r *RedisFailoverChecker) IsPodResourceOnlyChange(podRevision string, rFailover *redisfailoverv1.RedisFailover) (bool, error) {
+	revision, err := r.k8sService.GetControllerRevision(rFailover.Namespace, podRevision)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			// Pruned - permanently unknowable.
+			return false, nil
+		}
+		return false, fmt.Errorf("fetching controllerrevision %s: %w", podRevision, err)
+	}
+	oldTemplate, err := decodeStatefulSetRevisionTemplate(revision)
+	if err != nil {
+		// Immutable object, malformed data - not transient.
+		r.logger.WithField("redisfailover", rFailover.ObjectMeta.Name).WithField("revision", podRevision).Warningf("could not decode controllerrevision, falling back to delete: %v", err)
+		return false, nil
+	}
+	if len(oldTemplate.Spec.Containers) == 0 {
+		// Unexpected shape - don't guess.
+		return false, nil
+	}
+
+	ss, err := r.k8sService.GetStatefulSet(rFailover.Namespace, GetRedisName(rFailover))
+	if err != nil {
+		return false, fmt.Errorf("fetching statefulset %s: %w", GetRedisName(rFailover), err)
+	}
+	if ss == nil {
+		return false, nil
+	}
+
+	return k8s.IsResourceOnlyChange(&oldTemplate.Spec, &ss.Spec.Template.Spec, "redis"), nil
+}
+
+// statefulSetRevisionData mirrors the shape the StatefulSet controller writes into a
+// ControllerRevision's Data field. The "$patch" key is ignored on decode - json.Unmarshal skips
+// struct fields with no matching tag.
+type statefulSetRevisionData struct {
+	Spec struct {
+		Template corev1.PodTemplateSpec `json:"template"`
+	} `json:"spec"`
+}
+
+func decodeStatefulSetRevisionTemplate(revision *appsv1.ControllerRevision) (*corev1.PodTemplateSpec, error) {
+	var data statefulSetRevisionData
+	if err := json.Unmarshal(revision.Data.Raw, &data); err != nil {
+		return nil, fmt.Errorf("decoding controllerrevision %s: %w", revision.Name, err)
+	}
+	return &data.Spec.Template, nil
+}
+
+// GetPodResizeCondition reports podName's current PodResizePending or PodResizeInProgress
+// condition (nil if neither is present). Returning the whole condition, not just type/reason,
+// hands the caller LastTransitionTime for free (used to bound a stuck resize - see
+// attemptPodResize). PodResizePending is checked first: if both are present, a new resize was
+// requested mid-actuation of a previous one, handled the same as Deferred/Infeasible.
+func (r *RedisFailoverChecker) GetPodResizeCondition(podName string, rFailover *redisfailoverv1.RedisFailover) (*corev1.PodCondition, error) {
+	pod, err := r.k8sService.GetPod(rFailover.Namespace, podName)
+	if err != nil {
+		return nil, err
+	}
+	if pod == nil {
+		return nil, errors.New("pod not found")
+	}
+	for i := range pod.Status.Conditions {
+		if pod.Status.Conditions[i].Type == corev1.PodResizePending && pod.Status.Conditions[i].Status == corev1.ConditionTrue {
+			return &pod.Status.Conditions[i], nil
+		}
+	}
+	for i := range pod.Status.Conditions {
+		if pod.Status.Conditions[i].Type == corev1.PodResizeInProgress && pod.Status.Conditions[i].Status == corev1.ConditionTrue {
+			return &pod.Status.Conditions[i], nil
+		}
+	}
+	return nil, nil
+}
+
+// PodResourcesMatchDesired reports whether podName's redis container currently has the same
+// resources as rFailover.Spec.Redis.Resources. Uses resourceListMatches rather than whole-struct
+// equality so a namespace LimitRange injecting extra defaults (e.g. ephemeral-storage) doesn't
+// permanently block a match.
+func (r *RedisFailoverChecker) PodResourcesMatchDesired(podName string, rFailover *redisfailoverv1.RedisFailover) (bool, error) {
+	pod, err := r.k8sService.GetPod(rFailover.Namespace, podName)
+	if err != nil {
+		return false, err
+	}
+	if pod == nil {
+		return false, errors.New("pod not found")
+	}
+	for _, container := range pod.Spec.Containers {
+		if container.Name == "redis" {
+			desired := rFailover.Spec.Redis.Resources
+			return resourceListMatches(container.Resources.Requests, desired.Requests) &&
+				resourceListMatches(container.Resources.Limits, desired.Limits), nil
+		}
+	}
+	return false, errors.New("redis container not found in pod")
+}
+
+// resourceListMatches requires every desired key to match in actual; an extra actual-only key is
+// ignored (e.g. LimitRange defaulting) - except cpu/memory, the only two resource types resize
+// manages, which must also agree on presence so a value removed from desired (e.g. a dropped
+// memory limit) isn't mistaken for already matching while actual still has the stale value.
+func resourceListMatches(actual, desired corev1.ResourceList) bool {
+	for name, desiredQty := range desired {
+		actualQty, ok := actual[name]
+		if !ok || actualQty.Cmp(desiredQty) != 0 {
+			return false
+		}
+	}
+	for _, name := range [...]corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
+		if _, inActual := actual[name]; inActual {
+			if _, inDesired := desired[name]; !inDesired {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // GetRedisRevisionHash returns the statefulset uid for the pod

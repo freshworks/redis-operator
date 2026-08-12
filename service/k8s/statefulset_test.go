@@ -107,6 +107,9 @@ func TestStatefulSetServiceGetCreateOrUpdate(t *testing.T) {
 			mcli.AddReactor("create", "statefulsets", func(action kubetesting.Action) (bool, runtime.Object, error) {
 				return true, nil, test.errorOnCreation
 			})
+			mcli.AddReactor("update", "statefulsets", func(action kubetesting.Action) (bool, runtime.Object, error) {
+				return true, testStatefulSet, nil
+			})
 
 			service := k8s.NewStatefulSetService(mcli, log.Dummy, metrics.Dummy)
 			err := service.CreateOrUpdateStatefulSet(testns, test.statefulSet)

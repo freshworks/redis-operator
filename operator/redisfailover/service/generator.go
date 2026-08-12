@@ -413,6 +413,7 @@ func generateRedisStatefulSet(rf *redisfailoverv1.RedisFailover, labels map[stri
 							VolumeMounts: volumeMounts,
 							Command:      redisCommand,
 							Resources:    rf.Spec.Redis.Resources,
+							ResizePolicy: rf.Spec.Redis.ResizePolicy,
 							Lifecycle: &corev1.Lifecycle{
 								PreStop: &corev1.LifecycleHandler{
 									Exec: &corev1.ExecAction{

@@ -31,6 +31,40 @@ func (_m *RedisFailoverHeal) DeletePod(podName string, rFailover *v1.RedisFailov
 	return r0
 }
 
+func (_m *RedisFailoverHeal) RelabelPodRevision(podName string, rFailover *v1.RedisFailover, revision string) error {
+	ret := _m.Called(podName, rFailover, revision)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RelabelPodRevision")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover, string) error); ok {
+		r0 = rf(podName, rFailover, revision)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+func (_m *RedisFailoverHeal) ResizePod(podName string, rFailover *v1.RedisFailover) error {
+	ret := _m.Called(podName, rFailover)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ResizePod")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) error); ok {
+		r0 = rf(podName, rFailover)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // MakeMaster provides a mock function with given fields: ip, rFailover
 func (_m *RedisFailoverHeal) MakeMaster(ip string, rFailover *v1.RedisFailover) error {
 	ret := _m.Called(ip, rFailover)

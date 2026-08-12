@@ -11,6 +11,7 @@ import (
 	"github.com/freshworks/redis-operator/log"
 	"github.com/freshworks/redis-operator/service/k8s"
 	"github.com/freshworks/redis-operator/service/redis"
+	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -26,6 +27,13 @@ type RedisFailoverHeal interface {
 	SetSentinelCustomConfig(ip string, rFailover *redisfailoverv1.RedisFailover) error
 	SetRedisCustomConfig(ip string, rFailover *redisfailoverv1.RedisFailover) error
 	DeletePod(podName string, rFailover *redisfailoverv1.RedisFailover) error
+	// ResizePod applies rFailover's current redis resource requests/limits to podName
+	// in place, via the resize subresource, instead of deleting and recreating it.
+	ResizePod(podName string, rFailover *redisfailoverv1.RedisFailover) error
+	// RelabelPodRevision patches podName's controller-revision-hash label to revision. Only
+	// safe to call once the caller has confirmed the only difference between revisions was
+	// resources and the resize actually succeeded - see IsPodResourceOnlyChange.
+	RelabelPodRevision(podName string, rFailover *redisfailoverv1.RedisFailover, revision string) error
 }
 
 // RedisFailoverHealer is our implementation of RedisFailoverCheck interface
@@ -470,4 +478,19 @@ func ParseMemorySize(sizeStr string) (int64, error) {
 func (r *RedisFailoverHealer) DeletePod(podName string, rFailover *redisfailoverv1.RedisFailover) error {
 	r.logger.WithField("redisfailover", rFailover.ObjectMeta.Name).WithField("namespace", rFailover.ObjectMeta.Namespace).Infof("Deleting pods %s...", podName)
 	return r.k8sService.DeletePod(rFailover.Namespace, podName)
+}
+
+// ResizePod applies rFailover's current redis resource requests/limits to podName in place.
+func (r *RedisFailoverHealer) ResizePod(podName string, rFailover *redisfailoverv1.RedisFailover) error {
+	r.logger.WithField("redisfailover", rFailover.ObjectMeta.Name).WithField("namespace", rFailover.ObjectMeta.Namespace).Infof("Resizing pod %s...", podName)
+	return r.k8sService.ResizePod(rFailover.Namespace, podName, "redis", rFailover.Spec.Redis.Resources)
+}
+
+// RelabelPodRevision patches podName's controller-revision-hash label to revision, closing
+// the gap between the StatefulSet's status.updateRevision and the pod's own label that a
+// resize (unlike a delete-and-recreate) never updates on its own.
+func (r *RedisFailoverHealer) RelabelPodRevision(podName string, rFailover *redisfailoverv1.RedisFailover, revision string) error {
+	return r.k8sService.UpdatePodLabels(rFailover.Namespace, podName, map[string]string{
+		appsv1.ControllerRevisionHashLabelKey: revision,
+	})
 }

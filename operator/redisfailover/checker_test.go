@@ -1157,6 +1157,9 @@ func TestUpdate(t *testing.T) {
 					replicas = append(replicas, "slave3")
 				}
 				mrfc.On("GetStatefulSetUpdateRevision", rf).Once().Return(test.ssVersion, nil)
+				// Non-resize-only change in this scenario: falls through to the existing
+				// delete-based rollout for any mismatched pod, same as before the in-place
+				// resize feature was added. Called exactly once per UpdateRedisesPods call.
 				mrfc.On("GetRedisesSlavesPods", rf).Once().Return(replicas, nil)
 
 				for _, pod := range test.pods {

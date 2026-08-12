@@ -304,6 +304,11 @@ func (in *RedisSettings) DeepCopyInto(out *RedisSettings) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.ResizePolicy != nil {
+		in, out := &in.ResizePolicy, &out.ResizePolicy
+		*out = make([]corev1.ContainerResizePolicy, len(*in))
+		copy(*out, *in)
+	}
 	if in.NodeSelector != nil {
 		in, out := &in.NodeSelector, &out.NodeSelector
 		*out = make(map[string]string, len(*in))

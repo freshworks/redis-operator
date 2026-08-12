@@ -39,12 +39,25 @@ rules:
     verbs:
       - "*"
   - apiGroups:
+      - ""
+    resources:
+      - pods/resize
+    verbs:
+      - patch
+      - update
+  - apiGroups:
       - apps
     resources:
       - deployments
       - statefulsets
     verbs:
       - "*"
+  - apiGroups:
+      - apps
+    resources:
+      - controllerrevisions
+    verbs:
+      - get
   - apiGroups:
       - policy
     resources:

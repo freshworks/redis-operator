@@ -12,6 +12,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -19,6 +20,27 @@ import (
 	"github.com/freshworks/redis-operator/log"
 	"github.com/freshworks/redis-operator/metrics"
 )
+
+// IsResourceOnlyChange reports whether the only difference between oldSpec and newSpec is
+// containerName's resource requests/limits. Uses apiequality.Semantic.DeepEqual rather than
+// reflect.DeepEqual since raw reflection can report false differences on resource.Quantity.
+// Scoped to a single container because the resize path this feeds only knows how to resize
+// containerName - a change to any other container must still match exactly.
+func IsResourceOnlyChange(oldSpec, newSpec *corev1.PodSpec, containerName string) bool {
+	oldCopy := oldSpec.DeepCopy()
+	newCopy := newSpec.DeepCopy()
+	for i := range oldCopy.Containers {
+		if oldCopy.Containers[i].Name == containerName {
+			oldCopy.Containers[i].Resources = corev1.ResourceRequirements{}
+		}
+	}
+	for i := range newCopy.Containers {
+		if newCopy.Containers[i].Name == containerName {
+			newCopy.Containers[i].Resources = corev1.ResourceRequirements{}
+		}
+	}
+	return apiequality.Semantic.DeepEqual(oldCopy, newCopy)
+}
 
 // StatefulSet the StatefulSet service that knows how to interact with k8s to manage them
 type StatefulSet interface {
@@ -29,6 +51,9 @@ type StatefulSet interface {
 	CreateOrUpdateStatefulSet(namespace string, statefulSet *appsv1.StatefulSet) error
 	DeleteStatefulSet(namespace string, name string) error
 	ListStatefulSets(namespace string) (*appsv1.StatefulSetList, error)
+	// GetControllerRevision returns the named ControllerRevision - the historical template a
+	// StatefulSet revision's pods were created from, keyed by their controller-revision-hash.
+	GetControllerRevision(namespace, name string) (*appsv1.ControllerRevision, error)
 }
 
 // StatefulSetService is the service account service implementation using API calls to kubernetes.
@@ -170,6 +195,7 @@ func (s *StatefulSetService) CreateOrUpdateStatefulSet(namespace string, statefu
 	}
 	// set stored.volumeClaimTemplates
 	statefulSet.Spec.VolumeClaimTemplates = storedStatefulSet.Spec.VolumeClaimTemplates
+
 	statefulSet.Annotations = util.MergeAnnotations(storedStatefulSet.Annotations, statefulSet.Annotations)
 	return s.UpdateStatefulSet(namespace, statefulSet)
 }
@@ -187,4 +213,11 @@ func (s *StatefulSetService) ListStatefulSets(namespace string) (*appsv1.Statefu
 	stsList, err := s.kubeClient.AppsV1().StatefulSets(namespace).List(context.TODO(), metav1.ListOptions{})
 	recordMetrics(namespace, "StatefulSet", metrics.NOT_APPLICABLE, "LIST", err, s.metricsRecorder)
 	return stsList, err
+}
+
+// GetControllerRevision will retrieve the requested ControllerRevision based on namespace and name
+func (s *StatefulSetService) GetControllerRevision(namespace, name string) (*appsv1.ControllerRevision, error) {
+	revision, err := s.kubeClient.AppsV1().ControllerRevisions(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	recordMetrics(namespace, "ControllerRevision", name, "GET", err, s.metricsRecorder)
+	return revision, err
 }
