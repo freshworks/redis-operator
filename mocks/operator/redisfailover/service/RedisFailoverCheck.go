@@ -299,45 +299,33 @@ func (_m *RedisFailoverCheck) IsPodResourceOnlyChange(podName string, rFailover 
 	return r0, r1
 }
 
-func (_m *RedisFailoverCheck) GetPodResizeCondition(podName string, rFailover *v1.RedisFailover) (bool, corev1.PodConditionType, string, error) {
+func (_m *RedisFailoverCheck) GetPodResizeCondition(podName string, rFailover *v1.RedisFailover) (*corev1.PodCondition, error) {
 	ret := _m.Called(podName, rFailover)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetPodResizeCondition")
 	}
 
-	var r0 bool
-	var r1 corev1.PodConditionType
-	var r2 string
-	var r3 error
-	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) (bool, corev1.PodConditionType, string, error)); ok {
+	var r0 *corev1.PodCondition
+	var r1 error
+	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) (*corev1.PodCondition, error)); ok {
 		return rf(podName, rFailover)
 	}
-	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) bool); ok {
+	if rf, ok := ret.Get(0).(func(string, *v1.RedisFailover) *corev1.PodCondition); ok {
 		r0 = rf(podName, rFailover)
 	} else {
-		r0 = ret.Get(0).(bool)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*corev1.PodCondition)
+		}
 	}
 
-	if rf, ok := ret.Get(1).(func(string, *v1.RedisFailover) corev1.PodConditionType); ok {
+	if rf, ok := ret.Get(1).(func(string, *v1.RedisFailover) error); ok {
 		r1 = rf(podName, rFailover)
 	} else {
-		r1 = ret.Get(1).(corev1.PodConditionType)
+		r1 = ret.Error(1)
 	}
 
-	if rf, ok := ret.Get(2).(func(string, *v1.RedisFailover) string); ok {
-		r2 = rf(podName, rFailover)
-	} else {
-		r2 = ret.Get(2).(string)
-	}
-
-	if rf, ok := ret.Get(3).(func(string, *v1.RedisFailover) error); ok {
-		r3 = rf(podName, rFailover)
-	} else {
-		r3 = ret.Error(3)
-	}
-
-	return r0, r1, r2, r3
+	return r0, r1
 }
 
 func (_m *RedisFailoverCheck) PodResourcesMatchDesired(podName string, rFailover *v1.RedisFailover) (bool, error) {

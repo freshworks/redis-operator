@@ -124,6 +124,17 @@ func (r *RedisFailoverHandler) canResizePod(rf *redisfailoverv1.RedisFailover, p
 	return r.rfChecker.IsPodResourceOnlyChange(podRevision, rf)
 }
 
+// resizeInProgressTimeout bounds how long a pod may sit in PodResizeInProgress with no
+// resolution (no completion, no reported error) before attemptPodResize gives up and falls back
+// to delete. This is not a revival of the old Deferred/Infeasible waiting the resize state
+// machine deliberately dropped - both of those still fall back immediately, with zero wait.
+// This specifically covers a resize that the kubelet can seemingly never finish or fail cleanly
+// (e.g. a target value that can't be actuated at all, such as a memory quantity that isn't a
+// whole number of bytes) - without a bound, such a pod would wait forever. No annotation is
+// needed to track elapsed time: PodResizeInProgress is a real Kubernetes condition with its own
+// LastTransitionTime, so this is read directly off the pod rather than bookkept separately.
+const resizeInProgressTimeout = 5 * time.Minute
+
 // attemptPodResize is reached only once UpdateRedisesPods has confirmed both that this
 // RedisFailover has opted into in-place resize (Spec.Redis.ResizePolicy is non-empty) and that
 // podName's own pending revision change is resource-only (see canResizePod /
@@ -138,7 +149,7 @@ func (r *RedisFailoverHandler) canResizePod(rf *redisfailoverv1.RedisFailover, p
 // actively allocating/actuating the change (which can take real time, e.g. a container restart
 // under RestartContainer policy) - spec already matching desired is not by itself proof the
 // resize has finished, so this waits rather than relabeling early, unless the kubelet itself
-// reports the actuation errored.
+// reports the actuation errored, or resizeInProgressTimeout has elapsed with no resolution.
 func (r *RedisFailoverHandler) attemptPodResize(rf *redisfailoverv1.RedisFailover, podName, ssUR string) error {
 	matches, err := r.rfChecker.PodResourcesMatchDesired(podName, rf)
 	if err != nil {
@@ -148,17 +159,21 @@ func (r *RedisFailoverHandler) attemptPodResize(rf *redisfailoverv1.RedisFailove
 		return r.rfHealer.ResizePod(podName, rf)
 	}
 
-	found, condType, reason, err := r.rfChecker.GetPodResizeCondition(podName, rf)
+	cond, err := r.rfChecker.GetPodResizeCondition(podName, rf)
 	if err != nil {
 		return err
 	}
-	if found {
-		if condType == corev1.PodResizeInProgress && reason != corev1.PodReasonError {
-			// Still being actuated by the kubelet, no error - wait for the next reconcile
-			// rather than treating "no PodResizePending" as done.
-			return nil
+	if cond != nil {
+		if cond.Type == corev1.PodResizeInProgress && cond.Reason != corev1.PodReasonError {
+			if time.Since(cond.LastTransitionTime.Time) < resizeInProgressTimeout {
+				// Still being actuated by the kubelet, no error, within the grace window - wait
+				// for the next reconcile rather than treating "no PodResizePending" as done.
+				return nil
+			}
+			r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("pod", podName).Warningf("resize stuck in PodResizeInProgress for over %s with no resolution, falling back to delete", resizeInProgressTimeout)
+			return r.rfHealer.DeletePod(podName, rf)
 		}
-		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("pod", podName).Warningf("resize %s (%s), falling back to delete", condType, reason)
+		r.logger.WithField("redisfailover", rf.ObjectMeta.Name).WithField("pod", podName).Warningf("resize %s (%s), falling back to delete", cond.Type, cond.Reason)
 		return r.rfHealer.DeletePod(podName, rf)
 	}
 

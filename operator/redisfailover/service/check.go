@@ -50,10 +50,10 @@ type RedisFailoverCheck interface {
 	// StatefulSet stops changing, a stale cached signal would trivially read as resource-only
 	// for every remaining pod, regardless of what that pod's own pending diff actually contains.
 	IsPodResourceOnlyChange(podRevision string, rFailover *redisfailoverv1.RedisFailover) (bool, error)
-	// GetPodResizeCondition reports whether podName currently has a PodResizePending or
-	// PodResizeInProgress condition and, if so, which type and reason (e.g.
-	// corev1.PodReasonDeferred, corev1.PodReasonInfeasible, or corev1.PodReasonError).
-	GetPodResizeCondition(podName string, rFailover *redisfailoverv1.RedisFailover) (found bool, condType corev1.PodConditionType, reason string, err error)
+	// GetPodResizeCondition reports podName's current PodResizePending or PodResizeInProgress
+	// condition (nil if neither is present), including its reason (e.g. corev1.PodReasonDeferred,
+	// corev1.PodReasonInfeasible, corev1.PodReasonError) and LastTransitionTime.
+	GetPodResizeCondition(podName string, rFailover *redisfailoverv1.RedisFailover) (*corev1.PodCondition, error)
 	// PodResourcesMatchDesired reports whether podName's redis container currently has the
 	// same resources as rFailover.Spec.Redis.Resources. The absence of a PodResizePending
 	// condition alone doesn't prove a resize actually applied - it's also true when the
@@ -594,8 +594,10 @@ func decodeStatefulSetRevisionTemplate(revision *appsv1.ControllerRevision) (*co
 	return &data.Spec.Template, nil
 }
 
-// GetPodResizeCondition reports whether podName currently has a PodResizePending or
-// PodResizeInProgress condition and, if so, which type and reason.
+// GetPodResizeCondition reports podName's current PodResizePending or PodResizeInProgress
+// condition, if either is present (nil otherwise). Returning the whole condition - not just its
+// type and reason - also hands the caller LastTransitionTime for free, needed to bound how long
+// a stuck PodResizeInProgress is tolerated before giving up (see attemptPodResize).
 //
 // Checking only PodResizePending is not enough to tell a finished resize apart from one the
 // kubelet is still actively applying: ResizePod writes the desired spec into pod.Spec
@@ -608,25 +610,25 @@ func decodeStatefulSetRevisionTemplate(revision *appsv1.ControllerRevision) (*co
 // PodResizePending is checked first: per its own docs, if both conditions are present it means
 // a new resize was requested mid-actuation of a previous one, which should be handled the same
 // way any other Deferred/Infeasible condition is.
-func (r *RedisFailoverChecker) GetPodResizeCondition(podName string, rFailover *redisfailoverv1.RedisFailover) (bool, corev1.PodConditionType, string, error) {
+func (r *RedisFailoverChecker) GetPodResizeCondition(podName string, rFailover *redisfailoverv1.RedisFailover) (*corev1.PodCondition, error) {
 	pod, err := r.k8sService.GetPod(rFailover.Namespace, podName)
 	if err != nil {
-		return false, "", "", err
+		return nil, err
 	}
 	if pod == nil {
-		return false, "", "", errors.New("pod not found")
+		return nil, errors.New("pod not found")
 	}
-	for _, cond := range pod.Status.Conditions {
-		if cond.Type == corev1.PodResizePending && cond.Status == corev1.ConditionTrue {
-			return true, corev1.PodResizePending, cond.Reason, nil
+	for i := range pod.Status.Conditions {
+		if pod.Status.Conditions[i].Type == corev1.PodResizePending && pod.Status.Conditions[i].Status == corev1.ConditionTrue {
+			return &pod.Status.Conditions[i], nil
 		}
 	}
-	for _, cond := range pod.Status.Conditions {
-		if cond.Type == corev1.PodResizeInProgress && cond.Status == corev1.ConditionTrue {
-			return true, corev1.PodResizeInProgress, cond.Reason, nil
+	for i := range pod.Status.Conditions {
+		if pod.Status.Conditions[i].Type == corev1.PodResizeInProgress && pod.Status.Conditions[i].Status == corev1.ConditionTrue {
+			return &pod.Status.Conditions[i], nil
 		}
 	}
-	return false, "", "", nil
+	return nil, nil
 }
 
 // PodResourcesMatchDesired reports whether podName's redis container currently has the same

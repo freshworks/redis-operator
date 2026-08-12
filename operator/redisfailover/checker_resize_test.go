@@ -3,10 +3,12 @@ package redisfailover_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	redisfailoverv1 "github.com/freshworks/redis-operator/api/redisfailover/v1"
 	"github.com/freshworks/redis-operator/log"
@@ -15,6 +17,17 @@ import (
 	mK8SService "github.com/freshworks/redis-operator/mocks/service/k8s"
 	rfOperator "github.com/freshworks/redis-operator/operator/redisfailover"
 )
+
+// resizeCondition builds a pod resize condition that transitioned age ago - age matters only
+// for PodResizeInProgress cases exercising the resizeInProgressTimeout backstop.
+func resizeCondition(condType corev1.PodConditionType, reason string, age time.Duration) *corev1.PodCondition {
+	return &corev1.PodCondition{
+		Type:               condType,
+		Status:             corev1.ConditionTrue,
+		Reason:             reason,
+		LastTransitionTime: metav1.NewTime(time.Now().Add(-age)),
+	}
+}
 
 // This file covers attemptPodResize's branches (checker.go), reached via UpdateRedisesPods so
 // the real master/slave call sites are exercised, not just the function in isolation. Master
@@ -97,7 +110,7 @@ func TestAttemptPodResize_NotYetSubmitted_Submits(t *testing.T) {
 func TestAttemptPodResize_AlreadySubmitted_Infeasible_FallsBackToDelete(t *testing.T) {
 	rf, mrfc, mrfh := setupMasterResizeTest()
 	mrfc.On("PodResourcesMatchDesired", testMasterPod, rf).Once().Return(true, nil)
-	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(true, corev1.PodResizePending, corev1.PodReasonInfeasible, nil)
+	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(resizeCondition(corev1.PodResizePending, corev1.PodReasonInfeasible, 0), nil)
 	mrfh.On("DeletePod", testMasterPod, rf).Once().Return(nil)
 
 	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
@@ -110,7 +123,7 @@ func TestAttemptPodResize_AlreadySubmitted_Infeasible_FallsBackToDelete(t *testi
 func TestAttemptPodResize_AlreadySubmitted_Deferred_FallsBackToDelete(t *testing.T) {
 	rf, mrfc, mrfh := setupMasterResizeTest()
 	mrfc.On("PodResourcesMatchDesired", testMasterPod, rf).Once().Return(true, nil)
-	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(true, corev1.PodResizePending, corev1.PodReasonDeferred, nil)
+	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(resizeCondition(corev1.PodResizePending, corev1.PodReasonDeferred, 0), nil)
 	mrfh.On("DeletePod", testMasterPod, rf).Once().Return(nil)
 	// No eviction machinery exists anymore to stub - Deferred goes straight to delete, same as
 	// Infeasible, with no waiting.
@@ -125,11 +138,12 @@ func TestAttemptPodResize_AlreadySubmitted_Deferred_FallsBackToDelete(t *testing
 // TestAttemptPodResize_ResizeInProgress_WaitsRatherThanRelabeling guards the fix for a TOCTOU
 // gap: ResizePod writes the desired spec synchronously, so PodResourcesMatchDesired can already
 // read true while the kubelet is still actively actuating the change (PodResizeInProgress, no
-// error) - this must wait for a later reconcile rather than treating it as done.
+// error) - this must wait for a later reconcile rather than treating it as done, as long as it's
+// within resizeInProgressTimeout.
 func TestAttemptPodResize_ResizeInProgress_WaitsRatherThanRelabeling(t *testing.T) {
 	rf, mrfc, mrfh := setupMasterResizeTest()
 	mrfc.On("PodResourcesMatchDesired", testMasterPod, rf).Once().Return(true, nil)
-	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(true, corev1.PodResizeInProgress, "", nil)
+	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(resizeCondition(corev1.PodResizeInProgress, "", 30*time.Second), nil)
 	// RelabelPodRevision/DeletePod deliberately not stubbed - neither must be called while the
 	// kubelet is still actuating.
 
@@ -141,11 +155,29 @@ func TestAttemptPodResize_ResizeInProgress_WaitsRatherThanRelabeling(t *testing.
 }
 
 // TestAttemptPodResize_ResizeInProgressWithError_FallsBackToDelete: an actuation error is not
-// something to keep waiting on.
+// something to keep waiting on, regardless of how recently it transitioned.
 func TestAttemptPodResize_ResizeInProgressWithError_FallsBackToDelete(t *testing.T) {
 	rf, mrfc, mrfh := setupMasterResizeTest()
 	mrfc.On("PodResourcesMatchDesired", testMasterPod, rf).Once().Return(true, nil)
-	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(true, corev1.PodResizeInProgress, corev1.PodReasonError, nil)
+	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(resizeCondition(corev1.PodResizeInProgress, corev1.PodReasonError, 0), nil)
+	mrfh.On("DeletePod", testMasterPod, rf).Once().Return(nil)
+
+	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
+
+	assert.NoError(t, err)
+	mrfc.AssertExpectations(t)
+	mrfh.AssertExpectations(t)
+}
+
+// TestAttemptPodResize_ResizeInProgressExceedsTimeout_FallsBackToDelete guards the backstop for
+// a resize that the kubelet can seemingly never finish or fail cleanly (e.g. a fractional-byte
+// memory target that can never actually be actuated) - without this, PodResizeInProgress with no
+// error would wait forever. LastTransitionTime, not any operator-side bookkeeping, is what ages
+// out here.
+func TestAttemptPodResize_ResizeInProgressExceedsTimeout_FallsBackToDelete(t *testing.T) {
+	rf, mrfc, mrfh := setupMasterResizeTest()
+	mrfc.On("PodResourcesMatchDesired", testMasterPod, rf).Once().Return(true, nil)
+	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(resizeCondition(corev1.PodResizeInProgress, "", 10*time.Minute), nil)
 	mrfh.On("DeletePod", testMasterPod, rf).Once().Return(nil)
 
 	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
@@ -158,7 +190,7 @@ func TestAttemptPodResize_ResizeInProgressWithError_FallsBackToDelete(t *testing
 func TestAttemptPodResize_AlreadySubmitted_Success_RelabelsRevision(t *testing.T) {
 	rf, mrfc, mrfh := setupMasterResizeTest()
 	mrfc.On("PodResourcesMatchDesired", testMasterPod, rf).Once().Return(true, nil)
-	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(false, corev1.PodConditionType(""), "", nil)
+	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return((*corev1.PodCondition)(nil), nil)
 	mrfh.On("RelabelPodRevision", testMasterPod, rf, testSSVersion).Once().Return(nil)
 
 	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
@@ -263,7 +295,7 @@ func TestUpdateRedisesPods_TransientResizeEligibilityError_SkipsWithoutDeleteOrE
 func TestAttemptPodResize_SlaveUsesIdenticalLogicToMaster(t *testing.T) {
 	rf, mrfc, mrfh := setupSlaveResizeTest()
 	mrfc.On("PodResourcesMatchDesired", testSlavePod, rf).Once().Return(true, nil)
-	mrfc.On("GetPodResizeCondition", testSlavePod, rf).Once().Return(true, corev1.PodResizePending, corev1.PodReasonDeferred, nil)
+	mrfc.On("GetPodResizeCondition", testSlavePod, rf).Once().Return(resizeCondition(corev1.PodResizePending, corev1.PodReasonDeferred, 0), nil)
 	mrfh.On("DeletePod", testSlavePod, rf).Once().Return(nil)
 
 	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
