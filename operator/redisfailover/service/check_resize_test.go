@@ -20,11 +20,8 @@ import (
 	mK8SService "github.com/freshworks/redis-operator/mocks/service/k8s"
 )
 
-// resourceListMatches backs PodResourcesMatchDesired. These tests cover the fix for its
-// fragility against namespace LimitRange defaulting: a live pod's Requests/Limits can gain
-// extra resource names (e.g. ephemeral-storage) that never appear in the CR spec at all - a
-// whole-struct equality check would never match in that case, so the comparison must only
-// require the resource names actually present in desired.
+// resourceListMatches backs PodResourcesMatchDesired - tolerant of LimitRange-injected extras,
+// but not of a cpu/memory value the CR used to ask for and has since removed.
 
 func TestResourceListMatches_ExactMatch(t *testing.T) {
 	actual := corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("2Gi"), corev1.ResourceCPU: resource.MustParse("1")}
@@ -87,11 +84,7 @@ func TestResourceListMatches_NonResizableExtraKeyStillIgnoredWhenDesiredEmpty(t 
 	assert.True(t, resourceListMatches(actual, desired))
 }
 
-// TestResourceListMatches_MemoryRemovedFromDesiredButStillOnActual_ReportsMismatch guards the
-// fix for a real gap: if the CR drops a resource key it used to specify (e.g. removing a memory
-// limit), the old desired-keys-only comparison would treat that as an immediate match - since
-// desired no longer mentions memory, nothing was ever checked - permanently leaving the pod's
-// stale value in place. cpu/memory must now agree on presence, not just on value when present.
+// A memory limit dropped from the CR but still present on the live pod must not read as a match.
 func TestResourceListMatches_MemoryRemovedFromDesiredButStillOnActual_ReportsMismatch(t *testing.T) {
 	actual := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1"), corev1.ResourceMemory: resource.MustParse("2Gi")}
 	desired := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")}
@@ -99,11 +92,7 @@ func TestResourceListMatches_MemoryRemovedFromDesiredButStillOnActual_ReportsMis
 	assert.False(t, resourceListMatches(actual, desired))
 }
 
-// IsPodResourceOnlyChange diffs the ControllerRevision snapshot for a pod's current revision
-// against the StatefulSet's current template - both pure template objects, never touched by
-// pod-creation-time admission (the scheduler, ServiceAccount token injection, IRSA-style
-// webhooks, DefaultTolerationSeconds, etc.), so no noise-tolerance logic is needed at all,
-// unlike comparing a live pod's own (admission-mutated) spec would require.
+// IsPodResourceOnlyChange diffs a ControllerRevision snapshot against the current template.
 
 func newTestRedisFailover() *redisfailoverv1.RedisFailover {
 	return &redisfailoverv1.RedisFailover{
@@ -134,10 +123,7 @@ func templateSpec(image, memory string) corev1.PodSpec {
 	}
 }
 
-// newTestControllerRevision builds a ControllerRevision whose Data.Raw matches the real shape
-// the StatefulSet controller writes: a strategic-merge "replace" patch carrying the full
-// template verbatim, wrapped under spec.template. The "$patch" key must round-trip harmlessly
-// through decodeStatefulSetRevisionTemplate.
+// newTestControllerRevision matches the real Data.Raw shape the StatefulSet controller writes.
 func newTestControllerRevision(name, namespace, image, memory string) *appsv1.ControllerRevision {
 	type patchEnvelope struct {
 		Spec struct {
@@ -201,10 +187,7 @@ func TestIsPodResourceOnlyChange_ImageAlsoDiffers_ReportsFalse(t *testing.T) {
 	assert.False(t, got)
 }
 
-// TestIsPodResourceOnlyChange_RevisionPruned_ReportsFalseNotError guards against the
-// StatefulSet controller having already garbage-collected the pod's revision (beyond
-// RevisionHistoryLimit) - there's nothing safe to compare against, so this must fall back to
-// delete (false) rather than erroring the whole reconcile.
+// A pruned revision (beyond RevisionHistoryLimit) falls back to delete, not an error.
 func TestIsPodResourceOnlyChange_RevisionPruned_ReportsFalseNotError(t *testing.T) {
 	rf := newTestRedisFailover()
 	oldRevisionName := GetRedisName(rf) + "-longgone"
@@ -219,15 +202,8 @@ func TestIsPodResourceOnlyChange_RevisionPruned_ReportsFalseNotError(t *testing.
 	assert.False(t, got)
 }
 
-// TestIsPodResourceOnlyChange_TransientControllerRevisionError_PropagatesForRetry and
-// TestIsPodResourceOnlyChange_TransientStatefulSetError_PropagatesForRetry guard the distinction
-// between "permanently unknowable" (pruned revision, malformed data - falls back to false) and
-// "transiently unknowable" (a timeout, throttling, a dropped connection - genuinely retryable).
-// A transient failure must surface as a real error rather than resolving to (false, nil): the
-// caller (UpdateRedisesPods) treats an error here as "skip this pod, retry next reconcile," not
-// as "not resizable" - collapsing the two would force a disruptive delete (a Sentinel failover,
-// for the master) over a blip that had nothing to do with the pod and would likely have
-// resolved on its own by the next reconcile.
+// Unlike a pruned revision, a transient error (timeout, throttling) must surface as a real
+// error, not resolve to false - the caller retries instead of deleting over a passing blip.
 
 func TestIsPodResourceOnlyChange_TransientControllerRevisionError_PropagatesForRetry(t *testing.T) {
 	rf := newTestRedisFailover()

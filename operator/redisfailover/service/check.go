@@ -42,23 +42,16 @@ type RedisFailoverCheck interface {
 	IsRedisRunning(rFailover *redisfailoverv1.RedisFailover) bool
 	IsSentinelRunning(rFailover *redisfailoverv1.RedisFailover) bool
 	IsClusterRunning(rFailover *redisfailoverv1.RedisFailover) bool
-	// IsPodResourceOnlyChange reports whether podRevision - the revision a pod is currently on,
-	// per its controller-revision-hash label - differs from the StatefulSet's current template
-	// only in "redis" container resources, by diffing the ControllerRevision snapshot for that
-	// revision against the current template. Computed fresh per pod (not cached at the
-	// StatefulSet level) because pods are caught up one at a time across reconciles: once the
-	// StatefulSet stops changing, a stale cached signal would trivially read as resource-only
-	// for every remaining pod, regardless of what that pod's own pending diff actually contains.
+	// IsPodResourceOnlyChange reports whether podRevision differs from the StatefulSet's current
+	// template only in "redis" container resources. Checked fresh per pod, not cached, since a
+	// StatefulSet-level signal would go stale once the StatefulSet itself stops changing.
 	IsPodResourceOnlyChange(podRevision string, rFailover *redisfailoverv1.RedisFailover) (bool, error)
 	// GetPodResizeCondition reports podName's current PodResizePending or PodResizeInProgress
-	// condition (nil if neither is present), including its reason (e.g. corev1.PodReasonDeferred,
-	// corev1.PodReasonInfeasible, corev1.PodReasonError) and LastTransitionTime.
+	// condition (nil if neither is present).
 	GetPodResizeCondition(podName string, rFailover *redisfailoverv1.RedisFailover) (*corev1.PodCondition, error)
-	// PodResourcesMatchDesired reports whether podName's redis container currently has the
-	// same resources as rFailover.Spec.Redis.Resources. The absence of a PodResizePending
-	// condition alone doesn't prove a resize actually applied - it's also true when the
-	// resize call never reached the pod at all (e.g. an RBAC rejection) - so callers must
-	// check this before treating a resize as successful.
+	// PodResourcesMatchDesired reports whether podName's redis container currently has the same
+	// resources as rFailover.Spec.Redis.Resources. Not sufficient proof of a successful resize
+	// on its own - also true if the resize call never reached the pod (e.g. an RBAC rejection).
 	PodResourcesMatchDesired(podName string, rFailover *redisfailoverv1.RedisFailover) (bool, error)
 }
 
@@ -512,56 +505,34 @@ func (r *RedisFailoverChecker) GetStatefulSetUpdateRevision(rFailover *redisfail
 	return ss.Status.UpdateRevision, nil
 }
 
-// IsPodResourceOnlyChange reports whether podRevision - the revision a pod is currently on, per
-// its controller-revision-hash label (see GetRedisRevisionHash) - differs from the StatefulSet's
-// current template only in "redis" container resources.
+// IsPodResourceOnlyChange reports whether podRevision differs from the StatefulSet's current
+// template only in "redis" container resources.
 //
-// Deliberately does not compare the live pod's own spec: a running pod is not a pure
-// instantiation of its template - the scheduler, the ServiceAccount admission controller,
-// DefaultTolerationSeconds, and IRSA-style webhooks (e.g. EKS's pod identity webhook) all add or
-// set fields on every pod that never exist on any template (NodeName, extra Volumes/Env/
-// Tolerations, EnableServiceLinks, Priority, ...). Comparing that against a template would see
-// those as differences on every single pod, forever, regardless of what actually changed.
+// Compares ControllerRevision snapshots rather than the live pod's own spec, because a running
+// pod picks up fields no template ever has (scheduler/admission-injected NodeName, tolerations,
+// service account volumes, etc.) that would otherwise look like differences forever.
 //
-// Instead, this fetches the ControllerRevision named podRevision - the exact historical template
-// (metadata + PodSpec) that revision's pods were created from, kept by the StatefulSet
-// controller for exactly this kind of lookup (it's how `kubectl rollout history` works) - and
-// diffs that against the StatefulSet's current template. Both sides are then the same kind of
-// object (a pure template, never touched by pod-creation-time admission), so no noise tolerance
-// of any kind is needed - a real StatefulSet-level diff, not a pod-vs-template approximation.
-//
-// Distinguishes two different kinds of "can't tell": a revision that's been pruned beyond
-// RevisionHistoryLimit, or a ControllerRevision whose Data doesn't decode into a usable
-// template, is *permanently* unknowable - retrying changes nothing, so these fall back to
-// (false, nil), routing the caller to the pre-existing, dependency-free DeletePod path exactly
-// as if this feature didn't exist. A transient failure on either Get call (a timeout, rate
-// limiting, a dropped connection) is a different thing entirely: it's very likely to resolve on
-// its own, and the pod itself did nothing wrong - forcing a disruptive delete (a Sentinel
-// failover, if this is the master) over a blip that had nothing to do with the pod's actual
-// state would be a bad trade for something that would probably have succeeded on the very next
-// reconcile. So a transient error is returned as a real error instead, and it's on the caller
-// (UpdateRedisesPods) to skip this pod for the current reconcile - no delete, no resize - and
-// let the normal resync loop try again shortly.
+// A permanently unknowable result (revision pruned past RevisionHistoryLimit, or undecodable
+// data) falls back to (false, nil) - same as if this feature didn't exist. A transient Get
+// failure is returned as a real error instead, so the caller retries rather than treating it as
+// a confirmed "no" and deleting the pod over an unrelated blip.
 func (r *RedisFailoverChecker) IsPodResourceOnlyChange(podRevision string, rFailover *redisfailoverv1.RedisFailover) (bool, error) {
 	revision, err := r.k8sService.GetControllerRevision(rFailover.Namespace, podRevision)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
-			// Already pruned - there will never be anything to compare against, no matter how
-			// many times this is retried.
+			// Pruned - permanently unknowable.
 			return false, nil
 		}
 		return false, fmt.Errorf("fetching controllerrevision %s: %w", podRevision, err)
 	}
 	oldTemplate, err := decodeStatefulSetRevisionTemplate(revision)
 	if err != nil {
-		// Malformed data on an immutable object - not transient, retrying returns the exact
-		// same bytes every time.
+		// Immutable object, malformed data - not transient.
 		r.logger.WithField("redisfailover", rFailover.ObjectMeta.Name).WithField("revision", podRevision).Warningf("could not decode controllerrevision, falling back to delete: %v", err)
 		return false, nil
 	}
 	if len(oldTemplate.Spec.Containers) == 0 {
-		// Decoding produced an empty template - the ControllerRevision's Data didn't have the
-		// expected shape. Don't guess either way.
+		// Unexpected shape - don't guess.
 		return false, nil
 	}
 
@@ -576,10 +547,9 @@ func (r *RedisFailoverChecker) IsPodResourceOnlyChange(podRevision string, rFail
 	return k8s.IsResourceOnlyChange(&oldTemplate.Spec, &ss.Spec.Template.Spec, "redis"), nil
 }
 
-// statefulSetRevisionData mirrors the shape the StatefulSet controller encodes into a
-// ControllerRevision's Data field: a strategic-merge "replace" patch carrying the full template
-// verbatim (not a diff against a prior revision). The "$patch" key is ignored on decode - Go's
-// json.Unmarshal skips struct fields with no matching tag.
+// statefulSetRevisionData mirrors the shape the StatefulSet controller writes into a
+// ControllerRevision's Data field. The "$patch" key is ignored on decode - json.Unmarshal skips
+// struct fields with no matching tag.
 type statefulSetRevisionData struct {
 	Spec struct {
 		Template corev1.PodTemplateSpec `json:"template"`
@@ -595,21 +565,10 @@ func decodeStatefulSetRevisionTemplate(revision *appsv1.ControllerRevision) (*co
 }
 
 // GetPodResizeCondition reports podName's current PodResizePending or PodResizeInProgress
-// condition, if either is present (nil otherwise). Returning the whole condition - not just its
-// type and reason - also hands the caller LastTransitionTime for free, needed to bound how long
-// a stuck PodResizeInProgress is tolerated before giving up (see attemptPodResize).
-//
-// Checking only PodResizePending is not enough to tell a finished resize apart from one the
-// kubelet is still actively applying: ResizePod writes the desired spec into pod.Spec
-// synchronously, but PodResizePending only ever appears when the kubelet can't proceed
-// immediately (Deferred/Infeasible) - once it *can* proceed, PodResizePending never appears at
-// all, and the kubelet instead sets PodResizeInProgress for the entire time it's allocating and
-// actuating the change (which can be non-trivial, e.g. a container restart under
-// RestartContainer policy). Treating "no PodResizePending" as sufficient proof of success would
-// let a pod get relabeled as fully resized while the kubelet is still in the middle of it.
-// PodResizePending is checked first: per its own docs, if both conditions are present it means
-// a new resize was requested mid-actuation of a previous one, which should be handled the same
-// way any other Deferred/Infeasible condition is.
+// condition (nil if neither is present). Returning the whole condition, not just type/reason,
+// hands the caller LastTransitionTime for free (used to bound a stuck resize - see
+// attemptPodResize). PodResizePending is checked first: if both are present, a new resize was
+// requested mid-actuation of a previous one, handled the same as Deferred/Infeasible.
 func (r *RedisFailoverChecker) GetPodResizeCondition(podName string, rFailover *redisfailoverv1.RedisFailover) (*corev1.PodCondition, error) {
 	pod, err := r.k8sService.GetPod(rFailover.Namespace, podName)
 	if err != nil {
@@ -632,15 +591,9 @@ func (r *RedisFailoverChecker) GetPodResizeCondition(podName string, rFailover *
 }
 
 // PodResourcesMatchDesired reports whether podName's redis container currently has the same
-// resources as rFailover.Spec.Redis.Resources.
-//
-// Compares only the resource names present in the CR spec, not the whole ResourceRequirements
-// struct - a namespace LimitRange can inject additional defaults (e.g. ephemeral-storage) into
-// the live pod's Requests/Limits that never appear in the CR at all. A whole-struct equality
-// check would never match in that case, causing ResizePod to be re-issued every reconcile
-// until the timeout forces a DeletePod fallback - the feature would silently never succeed for
-// any tenant under such a LimitRange. Extra keys the live pod has beyond what the CR asked for
-// are simply ignored.
+// resources as rFailover.Spec.Redis.Resources. Uses resourceListMatches rather than whole-struct
+// equality so a namespace LimitRange injecting extra defaults (e.g. ephemeral-storage) doesn't
+// permanently block a match.
 func (r *RedisFailoverChecker) PodResourcesMatchDesired(podName string, rFailover *redisfailoverv1.RedisFailover) (bool, error) {
 	pod, err := r.k8sService.GetPod(rFailover.Namespace, podName)
 	if err != nil {
@@ -659,16 +612,10 @@ func (r *RedisFailoverChecker) PodResourcesMatchDesired(podName string, rFailove
 	return false, errors.New("redis container not found in pod")
 }
 
-// resourceListMatches reports whether actual has the same quantity as desired for every
-// resource name present in desired. A name in desired but absent from actual is a mismatch
-// (resize hasn't applied); a name present in actual but not in desired (e.g. LimitRange
-// defaulting an unrelated resource like ephemeral-storage) is ignored.
-//
-// cpu and memory are the exception: they're the only two resource types KEP-1287 resize can
-// actually manage, so a value the CR used to ask for and has since removed (e.g. a dropped
-// memory limit) must not be silently treated as already matching just because desired no
-// longer mentions it - actual still carries the stale value until a real resize (or delete)
-// propagates the removal. Every other resource name keeps the tolerant, desired-only check.
+// resourceListMatches requires every desired key to match in actual; an extra actual-only key is
+// ignored (e.g. LimitRange defaulting) - except cpu/memory, the only two resource types resize
+// manages, which must also agree on presence so a value removed from desired (e.g. a dropped
+// memory limit) isn't mistaken for already matching while actual still has the stale value.
 func resourceListMatches(actual, desired corev1.ResourceList) bool {
 	for name, desiredQty := range desired {
 		actualQty, ok := actual[name]

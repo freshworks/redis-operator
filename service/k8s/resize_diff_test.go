@@ -70,12 +70,8 @@ func TestIsResourceOnlyChange_EnvVarAlsoChanged(t *testing.T) {
 	assert.False(t, IsResourceOnlyChange(oldSpec, newSpec, "redis"))
 }
 
-// TestIsResourceOnlyChange_OnlyExporterResourcesChanged guards the exporter-sidecar gap found
-// in review: the in-place resize path only knows how to resize the "redis" container, so a
-// resource-only change to any other container (e.g. the exporter sidecar) must NOT be
-// classified as resize-only - it needs to fall through to the delete-based path instead,
-// since resizing "redis" alone would silently leave the exporter container's resources
-// unapplied while still being reported as a successful resize.
+// A resource-only change to a non-"redis" container (e.g. the exporter) must not be classified
+// as resize-only, since only "redis" can actually be resized.
 func TestIsResourceOnlyChange_OnlyExporterResourcesChanged(t *testing.T) {
 	oldSpec := basePodSpec()
 	newSpec := basePodSpec()
@@ -84,9 +80,8 @@ func TestIsResourceOnlyChange_OnlyExporterResourcesChanged(t *testing.T) {
 	assert.False(t, IsResourceOnlyChange(oldSpec, newSpec, "redis"))
 }
 
-// TestIsResourceOnlyChange_RedisAndExporterBothChanged: even though the redis container's own
-// resource change would be resize-only in isolation, a simultaneous exporter resource change
-// must still block the classification, since only "redis" can actually be resized.
+// A simultaneous exporter change still blocks classification even if redis's own change alone
+// would have been resize-only.
 func TestIsResourceOnlyChange_RedisAndExporterBothChanged(t *testing.T) {
 	oldSpec := basePodSpec()
 	newSpec := basePodSpec()

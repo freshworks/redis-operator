@@ -18,8 +18,8 @@ import (
 	rfOperator "github.com/freshworks/redis-operator/operator/redisfailover"
 )
 
-// resizeCondition builds a pod resize condition that transitioned age ago - age matters only
-// for PodResizeInProgress cases exercising the resizeInProgressTimeout backstop.
+// resizeCondition builds a pod resize condition that transitioned age ago, for exercising
+// resizeInProgressTimeout.
 func resizeCondition(condType corev1.PodConditionType, reason string, age time.Duration) *corev1.PodCondition {
 	return &corev1.PodCondition{
 		Type:               condType,
@@ -29,12 +29,8 @@ func resizeCondition(condType corev1.PodConditionType, reason string, age time.D
 	}
 }
 
-// This file covers attemptPodResize's branches (checker.go), reached via UpdateRedisesPods so
-// the real master/slave call sites are exercised, not just the function in isolation. Master
-// and slave now share identical logic, and there is no annotation-based state: the pod's live
-// resources (via PodResourcesMatchDesired), resize condition, and its revision's resource-only-
-// ness (via IsPodResourceOnlyChange, keyed by controller-revision-hash) are the only state
-// consulted, checked fresh on every call.
+// Covers attemptPodResize's branches via UpdateRedisesPods, so the real master/slave call sites
+// get exercised, not just the function in isolation.
 
 const (
 	testSSVersion = "new-revision"
@@ -55,10 +51,7 @@ func testResizePolicy() []corev1.ContainerResizePolicy {
 	}
 }
 
-// setupMasterResizeTest wires up the mocks needed to reach attemptPodResize for the master pod,
-// with ResizePolicy set on the CR (the opt-in gate) and the master's own pending change
-// confirmed resource-only via IsPodResourceOnlyChange - a single redis IP (so the ready-check
-// loop has no slaves to check), one stale master revision, no stale slaves.
+// setupMasterResizeTest wires up mocks to reach attemptPodResize for the master pod.
 func setupMasterResizeTest() (*redisfailoverv1.RedisFailover, *mRFService.RedisFailoverCheck, *mRFService.RedisFailoverHeal) {
 	rf := generateRF(false, false, false)
 	rf.Spec.Redis.ResizePolicy = testResizePolicy()
@@ -135,17 +128,13 @@ func TestAttemptPodResize_AlreadySubmitted_Deferred_FallsBackToDelete(t *testing
 	mrfh.AssertExpectations(t)
 }
 
-// TestAttemptPodResize_ResizeInProgress_WaitsRatherThanRelabeling guards the fix for a TOCTOU
-// gap: ResizePod writes the desired spec synchronously, so PodResourcesMatchDesired can already
-// read true while the kubelet is still actively actuating the change (PodResizeInProgress, no
-// error) - this must wait for a later reconcile rather than treating it as done, as long as it's
-// within resizeInProgressTimeout.
+// PodResourcesMatchDesired can read true before the kubelet finishes actuating - must wait, not
+// relabel, while PodResizeInProgress with no error is within the timeout.
 func TestAttemptPodResize_ResizeInProgress_WaitsRatherThanRelabeling(t *testing.T) {
 	rf, mrfc, mrfh := setupMasterResizeTest()
 	mrfc.On("PodResourcesMatchDesired", testMasterPod, rf).Once().Return(true, nil)
 	mrfc.On("GetPodResizeCondition", testMasterPod, rf).Once().Return(resizeCondition(corev1.PodResizeInProgress, "", 30*time.Second), nil)
-	// RelabelPodRevision/DeletePod deliberately not stubbed - neither must be called while the
-	// kubelet is still actuating.
+	// RelabelPodRevision/DeletePod deliberately not stubbed - neither must be called.
 
 	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
 
@@ -154,8 +143,7 @@ func TestAttemptPodResize_ResizeInProgress_WaitsRatherThanRelabeling(t *testing.
 	mrfh.AssertExpectations(t)
 }
 
-// TestAttemptPodResize_ResizeInProgressWithError_FallsBackToDelete: an actuation error is not
-// something to keep waiting on, regardless of how recently it transitioned.
+// An actuation error is not something to keep waiting on.
 func TestAttemptPodResize_ResizeInProgressWithError_FallsBackToDelete(t *testing.T) {
 	rf, mrfc, mrfh := setupMasterResizeTest()
 	mrfc.On("PodResourcesMatchDesired", testMasterPod, rf).Once().Return(true, nil)
@@ -169,11 +157,7 @@ func TestAttemptPodResize_ResizeInProgressWithError_FallsBackToDelete(t *testing
 	mrfh.AssertExpectations(t)
 }
 
-// TestAttemptPodResize_ResizeInProgressExceedsTimeout_FallsBackToDelete guards the backstop for
-// a resize that the kubelet can seemingly never finish or fail cleanly (e.g. a fractional-byte
-// memory target that can never actually be actuated) - without this, PodResizeInProgress with no
-// error would wait forever. LastTransitionTime, not any operator-side bookkeeping, is what ages
-// out here.
+// Bounds a resize the kubelet never resolves (e.g. a target it can never actually actuate).
 func TestAttemptPodResize_ResizeInProgressExceedsTimeout_FallsBackToDelete(t *testing.T) {
 	rf, mrfc, mrfh := setupMasterResizeTest()
 	mrfc.On("PodResourcesMatchDesired", testMasterPod, rf).Once().Return(true, nil)
@@ -200,10 +184,7 @@ func TestAttemptPodResize_AlreadySubmitted_Success_RelabelsRevision(t *testing.T
 	mrfh.AssertExpectations(t)
 }
 
-// TestUpdateRedisesPods_ResizePolicyUnset_NeverAttemptsResize proves the CRD-field opt-in gate
-// is checked first and short-circuits before any API calls - even though the pending change
-// would otherwise be resource-only, a RedisFailover without ResizePolicy set must always
-// delete/recreate, and IsPodResourceOnlyChange must never even be called.
+// The opt-in gate short-circuits before any resource-only check when ResizePolicy is unset.
 func TestUpdateRedisesPods_ResizePolicyUnset_NeverAttemptsResize(t *testing.T) {
 	rf := generateRF(false, false, false)
 	// rf.Spec.Redis.ResizePolicy deliberately left unset.
@@ -218,8 +199,7 @@ func TestUpdateRedisesPods_ResizePolicyUnset_NeverAttemptsResize(t *testing.T) {
 	mrfc.On("GetRedisRevisionHash", testMasterPod, rf).Once().Return("old-revision", nil)
 	mrfh.On("DeletePod", testMasterPod, rf).Once().Return(nil)
 	// IsPodResourceOnlyChange/PodResourcesMatchDesired/GetPodResizeCondition deliberately not
-	// stubbed - attemptPodResize must never be reached, and the gate must short-circuit before
-	// even checking whether the pod's own diff is resource-only.
+	// stubbed - must never be called.
 
 	err := newResizeTestHandler(rf, mrfc, mrfh).UpdateRedisesPods(rf)
 
@@ -228,14 +208,7 @@ func TestUpdateRedisesPods_ResizePolicyUnset_NeverAttemptsResize(t *testing.T) {
 	mrfh.AssertExpectations(t)
 }
 
-// TestUpdateRedisesPods_NotResourceOnlyForThisPod_FallsBackToDelete guards the fix for a real
-// production bug: IsPodResourceOnlyChange is checked per pod, per call, rather than relying on a
-// single cached StatefulSet-level signal. A previous design cached "was the last StatefulSet
-// write resource-only" once per reconcile and reused it for every pod - which goes stale as
-// soon as the StatefulSet itself stops changing (each remaining stale pod is then, incorrectly,
-// always treated as resource-only, regardless of what its own pending diff actually contains).
-// Here, even though ResizePolicy is set on the CR, this pod's own diff is confirmed
-// non-resource-only, so it must fall back to delete rather than attempt a resize.
+// Even with ResizePolicy set, a pod whose own diff isn't resource-only falls back to delete.
 func TestUpdateRedisesPods_NotResourceOnlyForThisPod_FallsBackToDelete(t *testing.T) {
 	rf := generateRF(false, false, false)
 	rf.Spec.Redis.ResizePolicy = testResizePolicy()
@@ -260,13 +233,7 @@ func TestUpdateRedisesPods_NotResourceOnlyForThisPod_FallsBackToDelete(t *testin
 	mrfh.AssertExpectations(t)
 }
 
-// TestUpdateRedisesPods_TransientResizeEligibilityError_SkipsWithoutDeleteOrError guards the
-// fix for treating a transient failure the same as a confirmed "not resizable": a timeout or
-// throttling error while checking eligibility is genuinely unknown, not a confirmed answer, so
-// it must skip this pod for the reconcile (no delete, no resize) and let it be re-evaluated
-// fresh next time - rather than forcing a disruptive delete (a Sentinel failover, for the
-// master) over a blip unrelated to the pod's actual state, and rather than returning the error
-// and aborting the reconcile pass outright.
+// A transient eligibility-check error skips the pod this reconcile - no delete, no error.
 func TestUpdateRedisesPods_TransientResizeEligibilityError_SkipsWithoutDeleteOrError(t *testing.T) {
 	rf := generateRF(false, false, false)
 	rf.Spec.Redis.ResizePolicy = testResizePolicy()
@@ -289,9 +256,7 @@ func TestUpdateRedisesPods_TransientResizeEligibilityError_SkipsWithoutDeleteOrE
 	mrfh.AssertExpectations(t)
 }
 
-// TestAttemptPodResize_SlaveUsesIdenticalLogicToMaster documents that the old
-// allowEviction/timeout asymmetry between master and slave is gone - a Deferred slave resize
-// now falls back to delete exactly like a Deferred master resize, via the same shared function.
+// Master and slave share identical logic - no per-role asymmetry.
 func TestAttemptPodResize_SlaveUsesIdenticalLogicToMaster(t *testing.T) {
 	rf, mrfc, mrfh := setupSlaveResizeTest()
 	mrfc.On("PodResourcesMatchDesired", testSlavePod, rf).Once().Return(true, nil)

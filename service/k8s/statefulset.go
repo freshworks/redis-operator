@@ -22,23 +22,10 @@ import (
 )
 
 // IsResourceOnlyChange reports whether the only difference between oldSpec and newSpec is
-// containerName's resource requests/limits, by neutralizing that one field on copies of both
-// (only for containerName, not every container) and comparing everything else. Uses
-// apiequality.Semantic.DeepEqual rather than reflect.DeepEqual because raw reflection can
-// report false differences on resource.Quantity.
-//
-// Scoped to a single container deliberately: the in-place resize path this feeds into only
-// knows how to resize containerName (see ResizePod/PodResourcesMatchDesired). Neutralizing
-// every container's Resources here would misclassify a resource-only change to some other
-// container (e.g. the exporter sidecar) as resize-only, when this feature can't actually
-// apply it - the resize would silently no-op for that container while still being marked
-// successful. Requiring every other container to match exactly means such a change correctly
-// falls through to the existing delete-based path instead.
-//
-// Callers must pass two objects that have both already been through API server defaulting
-// (e.g. a live Pod's spec and a stored StatefulSet's template spec) - comparing a freshly-built,
-// never-submitted Go struct against either would show spurious differences from the defaulting
-// gap alone, regardless of what actually changed.
+// containerName's resource requests/limits. Uses apiequality.Semantic.DeepEqual rather than
+// reflect.DeepEqual since raw reflection can report false differences on resource.Quantity.
+// Scoped to a single container because the resize path this feeds only knows how to resize
+// containerName - a change to any other container must still match exactly.
 func IsResourceOnlyChange(oldSpec, newSpec *corev1.PodSpec, containerName string) bool {
 	oldCopy := oldSpec.DeepCopy()
 	newCopy := newSpec.DeepCopy()
@@ -64,13 +51,8 @@ type StatefulSet interface {
 	CreateOrUpdateStatefulSet(namespace string, statefulSet *appsv1.StatefulSet) error
 	DeleteStatefulSet(namespace string, name string) error
 	ListStatefulSets(namespace string) (*appsv1.StatefulSetList, error)
-	// GetControllerRevision returns the named ControllerRevision - for a StatefulSet, this is
-	// the exact historical template (metadata + PodSpec) some revision of its pods was created
-	// from, keyed by the same name every pod on that revision carries in its
-	// controller-revision-hash label. Unlike a live pod's own spec, this is a pure template
-	// snapshot that never went through pod-creation-time admission (scheduler, ServiceAccount
-	// token injection, IRSA-style webhooks, etc.), so it's directly comparable to the
-	// StatefulSet's current template with no admission-noise tolerance needed.
+	// GetControllerRevision returns the named ControllerRevision - the historical template a
+	// StatefulSet revision's pods were created from, keyed by their controller-revision-hash.
 	GetControllerRevision(namespace, name string) (*appsv1.ControllerRevision, error)
 }
 
