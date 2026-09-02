@@ -637,16 +637,16 @@ func TestCheckAndHeal(t *testing.T) {
 				mrfc.On("GetSentinelsIPs", rf).Once().Return([]string{sentinel}, nil)
 				if test.sentinelMonitorOK {
 					if test.bootstrapping {
-						mrfc.On("CheckSentinelMonitor", sentinel, rf.MasterName(), bootstrapMaster, bootstrapMasterPort).Once().Return(nil)
+						mrfc.On("CheckSentinelMonitor", rf, sentinel, bootstrapMaster, bootstrapMasterPort).Once().Return(nil)
 					} else {
-						mrfc.On("CheckSentinelMonitor", sentinel, rf.MasterName(), master, "0").Once().Return(nil)
+						mrfc.On("CheckSentinelMonitor", rf, sentinel, master, "0").Once().Return(nil)
 					}
 				} else {
 					if test.bootstrapping {
-						mrfc.On("CheckSentinelMonitor", sentinel, rf.MasterName(), bootstrapMaster, bootstrapMasterPort).Once().Return(errors.New(""))
+						mrfc.On("CheckSentinelMonitor", rf, sentinel, bootstrapMaster, bootstrapMasterPort).Once().Return(errors.New(""))
 						mrfh.On("NewSentinelMonitorWithPort", sentinel, bootstrapMaster, bootstrapMasterPort, rf).Once().Return(nil)
 					} else {
-						mrfc.On("CheckSentinelMonitor", sentinel, rf.MasterName(), master, "0").Once().Return(errors.New(""))
+						mrfc.On("CheckSentinelMonitor", rf, sentinel, master, "0").Once().Return(errors.New(""))
 						mrfh.On("NewSentinelMonitor", sentinel, master, rf).Once().Return(nil)
 					}
 				}
@@ -654,13 +654,13 @@ func TestCheckAndHeal(t *testing.T) {
 					mrfc.On("CheckSentinelNumberInMemory", sentinel, rf).Once().Return(nil)
 				} else {
 					mrfc.On("CheckSentinelNumberInMemory", sentinel, rf).Once().Return(errors.New(""))
-					mrfh.On("RestoreSentinel", sentinel).Once().Return(nil)
+					mrfh.On("RestoreSentinel", sentinel, rf).Once().Return(nil)
 				}
 				if test.sentinelSlavesNumberInMemoryOK {
 					mrfc.On("CheckSentinelSlavesNumberInMemory", sentinel, rf).Once().Return(nil)
 				} else {
 					mrfc.On("CheckSentinelSlavesNumberInMemory", sentinel, rf).Once().Return(errors.New(""))
-					mrfh.On("RestoreSentinel", sentinel).Once().Return(nil)
+					mrfh.On("RestoreSentinel", sentinel, rf).Once().Return(nil)
 				}
 				mrfh.On("SetSentinelCustomConfig", sentinel, rf).Once().Return(nil)
 			}

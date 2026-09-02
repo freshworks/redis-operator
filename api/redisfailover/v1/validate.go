@@ -76,6 +76,66 @@ func (r *RedisFailover) Validate() error {
 		r.Spec.Sentinel.CustomConfig = defaultSentinelCustomConfig
 	}
 
+	if err := r.validateTLS(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateTLS enforces the TLSSettings invariants and applies defaults.
+// Returns nil when TLS is disabled or unset.
+func (r *RedisFailover) validateTLS() error {
+	tls := r.Spec.TLS
+	if tls == nil || !tls.Enabled {
+		return nil
+	}
+
+	switch tls.AuthClients {
+	case "":
+		tls.AuthClients = defaultTLSAuthClients
+	case TLSAuthClientsNo, TLSAuthClientsOptional, TLSAuthClientsYes:
+		// ok
+	default:
+		return fmt.Errorf("tls.authClients must be one of %q, %q, %q (got %q)",
+			TLSAuthClientsNo, TLSAuthClientsOptional, TLSAuthClientsYes, tls.AuthClients)
+	}
+
+	cmSet := tls.CertManager != nil
+	secretSet := tls.CertificateSecret != nil
+
+	switch {
+	case cmSet && secretSet:
+		return errors.New("tls.certManager and tls.certificateSecret are mutually exclusive")
+	case !cmSet && !secretSet:
+		return errors.New("tls.enabled is true but neither tls.certManager nor tls.certificateSecret is set")
+	}
+
+	if cmSet {
+		if tls.CertManager.IssuerRef.Name == "" {
+			return errors.New("tls.certManager.issuerRef.name is required")
+		}
+		if tls.CertManager.IssuerRef.Group == "" {
+			tls.CertManager.IssuerRef.Group = defaultCertManagerGroup
+		}
+		if tls.CertManager.IssuerRef.Kind == "" {
+			tls.CertManager.IssuerRef.Kind = defaultCertManagerKind
+		}
+	}
+
+	if secretSet && tls.CertificateSecret.SecretName == "" {
+		return errors.New("tls.certificateSecret.secretName is required")
+	}
+
+	// The operator writes the CA-only Secret unconditionally. Pointing it at
+	// the Secret that carries the certificate and key would replace that
+	// material with a Secret holding nothing but ca.crt, leaving the cluster
+	// without a serving certificate.
+	if tls.CACertSecretName != "" && tls.CACertSecretName == r.TLSSecretName() {
+		return fmt.Errorf("tls.caCertSecretName %q must differ from the Secret holding the certificate and key, "+
+			"otherwise the CA-only Secret the operator publishes overwrites it", tls.CACertSecretName)
+	}
+
 	return nil
 }
 

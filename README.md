@@ -442,6 +442,26 @@ To enable auth create a secret with a password field:
 echo -n "pass" > password
 kubectl create secret generic redis-auth --from-file=password
 
+### Enabling TLS
+
+TLS is configured through `spec.tls` and is chosen when the RedisFailover is created: the API rejects any later update that turns it on or off. Redis replication and Sentinel cannot straddle two wire protocols, so a rolling change would leave replicas unable to sync from the master and Sentinels failing over to a replica that stopped replicating while the master still serves writes. To move an existing failover to TLS, or back to plaintext, create a new RedisFailover and migrate the data.
+
+Set `spec.tls.enabled: true` and exactly one certificate source: `spec.tls.certManager`, which makes the operator create a cert-manager Certificate from `issuerRef`, or `spec.tls.certificateSecret`, an existing Secret with `tls.crt`, `tls.key` and `ca.crt`. The material is mounted read-only at `/tls` in the Redis and Sentinel pods, which then listen only with TLS on their usual ports, so clients must connect with TLS and trust the CA. The operator also publishes a CA-only Secret (`<tls-secret>-ca` by default, `spec.tls.caCertSecretName` overrides it) for clients that need the CA without the private key, and `spec.tls.authClients` maps to `tls-auth-clients`. A renewed certificate rolls the pods, since Redis reads the files only at startup. The remaining `spec.tls` fields stay mutable.
+
+```yaml
+apiVersion: databases.spotahome.com/v1
+kind: RedisFailover
+metadata:
+  name: redisfailover
+spec:
+  tls:
+    enabled: true
+    certManager:
+      issuerRef:
+        name: my-issuer
+        kind: ClusterIssuer
+```
+
 ## example config
 apiVersion: databases.spotahome.com/v1
 kind: RedisFailover

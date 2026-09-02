@@ -22,6 +22,7 @@ type CMDFlags struct {
 	K8sQueriesBurstable      int
 	Concurrency              int
 	LogLevel                 string
+	ClusterDomain            string
 }
 
 // Init initializes and parse the flags
@@ -39,6 +40,8 @@ func (c *CMDFlags) Init() {
 	// reference: https://github.com/spotahome/kooper/blob/master/controller/controller.go#L89
 	flag.IntVar(&c.Concurrency, "concurrency", 3, "Number of conccurent workers meant to process events")
 	flag.StringVar(&c.LogLevel, "log-level", "info", "set log level")
+	flag.StringVar(&c.ClusterDomain, "cluster-domain", "cluster.local",
+		"Kubernetes cluster DNS suffix used to template the cert-manager Certificate SAN list (e.g. cluster.local, cozy.local)")
 	// Parse flags
 	flag.Parse()
 
@@ -54,5 +57,6 @@ func (c *CMDFlags) ToRedisOperatorConfig() redisfailover.Config {
 		MetricsPath:              c.MetricsPath,
 		Concurrency:              c.Concurrency,
 		SupportedNamespacesRegex: c.SupportedNamespacesRegex,
+		ClusterDomain:            c.ClusterDomain,
 	}
 }

@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 
+	cmclientset "github.com/cert-manager/cert-manager/pkg/client/clientset/versioned"
 	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -35,26 +36,39 @@ func LoadKubernetesConfig(flags *CMDFlags) (*rest.Config, error) {
 	return cfg, nil
 }
 
-// CreateKubernetesClients create the clients to connect to kubernetes
-func CreateKubernetesClients(flags *CMDFlags) (kubernetes.Interface, redisfailoverclientset.Interface, apiextensionsclientset.Interface, error) {
+// CreateKubernetesClients creates the clients used by the operator:
+// core kubernetes, the RedisFailover CRD client, the apiextensions
+// client (for CRD installation/upgrade) and the cert-manager client
+// (used only when spec.tls.certManager is configured on a failover).
+//
+// Returning nil for the cert-manager client is not supported: cert-manager
+// types are always wired up. Cluster installations that do not have
+// cert-manager installed simply never trigger any Certificate API calls
+// because no RedisFailover opts into TLS.
+func CreateKubernetesClients(flags *CMDFlags) (kubernetes.Interface, redisfailoverclientset.Interface, apiextensionsclientset.Interface, cmclientset.Interface, error) {
 	config, err := LoadKubernetesConfig(flags)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	customClientset, err := redisfailoverclientset.NewForConfig(config)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	aeClientset, err := apiextensionsclientset.NewForConfig(config)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
-	return clientset, customClientset, aeClientset, nil
+	cmCli, err := cmclientset.NewForConfig(config)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	return clientset, customClientset, aeClientset, cmCli, nil
 }

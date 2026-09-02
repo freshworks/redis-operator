@@ -45,7 +45,7 @@ const (
 	authSecretPath          = "redis-auth"
 	testPass                = "test-pass"
 	redisAddr               = "redis://127.0.0.1:6379"
-	integrationTestGroupID   = "integration-test"
+	integrationTestGroupID  = "integration-test"
 	rfOperatorGroupLabelKey = "redis-failover.freshworks.com/operator-group"
 )
 
@@ -91,7 +91,7 @@ func TestRedisFailover(t *testing.T) {
 	}
 
 	// Kubernetes clients.
-	k8sClient, customClient, aeClientset, err := utils.CreateKubernetesClients(flags)
+	k8sClient, customClient, aeClientset, cmClient, err := utils.CreateKubernetesClients(flags)
 	require.NoError(err)
 
 	// Create the redis clients
@@ -105,7 +105,7 @@ func TestRedisFailover(t *testing.T) {
 	}
 
 	// Create kubernetes service.
-	k8sservice := k8s.New(k8sClient, customClient, aeClientset, log.Dummy, metrics.Dummy)
+	k8sservice := k8s.New(k8sClient, customClient, aeClientset, cmClient, log.Dummy, metrics.Dummy)
 
 	// Prepare namespace
 	prepErr := clients.prepareNS(currentNamespace)
@@ -224,7 +224,7 @@ func TestRedisFailoverMyMaster(t *testing.T) {
 	}
 
 	// Kubernetes clients.
-	k8sClient, customClient, aeClientset, err := utils.CreateKubernetesClients(flags)
+	k8sClient, customClient, aeClientset, cmClient, err := utils.CreateKubernetesClients(flags)
 	require.NoError(err)
 
 	// Create the redis clients
@@ -238,7 +238,7 @@ func TestRedisFailoverMyMaster(t *testing.T) {
 	}
 
 	// Create kubernetes service.
-	k8sservice := k8s.New(k8sClient, customClient, aeClientset, log.Dummy, metrics.Dummy)
+	k8sservice := k8s.New(k8sClient, customClient, aeClientset, cmClient, log.Dummy, metrics.Dummy)
 
 	// Prepare namespace
 	prepErr := clients.prepareNS(currentNamespace)
@@ -398,7 +398,7 @@ func (c *clients) testRedisMaster(t *testing.T, currentNamespace string, rfName 
 
 	for _, pod := range redisPodList.Items {
 		ip := pod.Status.PodIP
-		if ok, _ := c.redisClient.IsMaster(ip, "6379", testPass); ok {
+		if ok, _ := c.redisClient.IsMaster(ip, "6379", testPass, nil); ok {
 			masters = append(masters, ip)
 		}
 	}
@@ -427,7 +427,7 @@ func (c *clients) testSentinelMonitoring(t *testing.T, currentNamespace string, 
 
 	for _, pod := range sentinelPodList.Items {
 		ip := pod.Status.PodIP
-		master, _, _ := c.redisClient.GetSentinelMonitor(ip, masterName)
+		master, _, _ := c.redisClient.GetSentinelMonitor(ip, masterName, nil)
 		masters = append(masters, master)
 	}
 
@@ -435,7 +435,7 @@ func (c *clients) testSentinelMonitoring(t *testing.T, currentNamespace string, 
 		assert.Equal(masters[0], masterIP, "all master ip monitoring should equal")
 	}
 
-	isMaster, err := c.redisClient.IsMaster(masters[0], "6379", testPass)
+	isMaster, err := c.redisClient.IsMaster(masters[0], "6379", testPass, nil)
 	assert.NoError(err)
 	assert.True(isMaster, "Sentinel should monitor the Redis master")
 }

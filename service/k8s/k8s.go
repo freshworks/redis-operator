@@ -1,6 +1,7 @@
 package k8s
 
 import (
+	cmclientset "github.com/cert-manager/cert-manager/pkg/client/clientset/versioned"
 	apiextensionscli "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
 
@@ -20,6 +21,7 @@ type Services interface {
 	RBAC
 	Deployment
 	StatefulSet
+	Certificate
 }
 
 type services struct {
@@ -32,10 +34,11 @@ type services struct {
 	RBAC
 	Deployment
 	StatefulSet
+	Certificate
 }
 
 // New returns a new Kubernetes service.
-func New(kubecli kubernetes.Interface, crdcli redisfailoverclientset.Interface, apiextcli apiextensionscli.Interface, logger log.Logger, metricsRecorder metrics.Recorder) Services {
+func New(kubecli kubernetes.Interface, crdcli redisfailoverclientset.Interface, apiextcli apiextensionscli.Interface, cmcli cmclientset.Interface, logger log.Logger, metricsRecorder metrics.Recorder) Services {
 	return &services{
 		ConfigMap:           NewConfigMapService(kubecli, logger, metricsRecorder),
 		Secret:              NewSecretService(kubecli, logger, metricsRecorder),
@@ -46,5 +49,6 @@ func New(kubecli kubernetes.Interface, crdcli redisfailoverclientset.Interface, 
 		RBAC:                NewRBACService(kubecli, logger, metricsRecorder),
 		Deployment:          NewDeploymentService(kubecli, logger, metricsRecorder),
 		StatefulSet:         NewStatefulSetService(kubecli, logger, metricsRecorder),
+		Certificate:         NewCertificateService(cmcli, logger, metricsRecorder),
 	}
 }

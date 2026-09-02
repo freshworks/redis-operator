@@ -58,3 +58,69 @@ func TestSecretServiceGet(t *testing.T) {
 		assert.True(errors.IsNotFound(err))
 	})
 }
+
+func TestSecretServiceCreateOrUpdate(t *testing.T) {
+	t.Run("creates when absent then updates when present", func(t *testing.T) {
+		assert := assert.New(t)
+
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ca-secret",
+				Namespace: "test_namespace",
+			},
+			Type: corev1.SecretTypeOpaque,
+			Data: map[string][]byte{
+				"ca.crt": []byte("PEM-V1"),
+			},
+		}
+
+		mcli := kubernetes.NewSimpleClientset()
+		service := NewSecretService(mcli, log.Dummy, metrics.Dummy)
+
+		// Create branch: secret does not exist yet.
+		assert.NoError(service.CreateOrUpdateSecret(secret.Namespace, secret.DeepCopy()))
+		got, err := mcli.CoreV1().Secrets(secret.Namespace).Get(context.TODO(), secret.Name, metav1.GetOptions{})
+		assert.NoError(err)
+		assert.Equal([]byte("PEM-V1"), got.Data["ca.crt"])
+
+		// Update branch: same name, rotated CA content.
+		updated := secret.DeepCopy()
+		updated.Data["ca.crt"] = []byte("PEM-V2")
+		assert.NoError(service.CreateOrUpdateSecret(updated.Namespace, updated))
+		got, err = mcli.CoreV1().Secrets(secret.Namespace).Get(context.TODO(), secret.Name, metav1.GetOptions{})
+		assert.NoError(err)
+		assert.Equal([]byte("PEM-V2"), got.Data["ca.crt"])
+	})
+
+	t.Run("skips the update when stored content is identical", func(t *testing.T) {
+		assert := assert.New(t)
+
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ca-secret",
+				Namespace: "test_namespace",
+			},
+			Type: corev1.SecretTypeOpaque,
+			Data: map[string][]byte{
+				"ca.crt": []byte("PEM-V1"),
+			},
+		}
+
+		mcli := kubernetes.NewSimpleClientset()
+		service := NewSecretService(mcli, log.Dummy, metrics.Dummy)
+
+		// Seed the secret.
+		assert.NoError(service.CreateOrUpdateSecret(secret.Namespace, secret.DeepCopy()))
+
+		// Drop the create/get actions so the next call's actions can be inspected
+		// in isolation. Re-applying an unchanged desired state must not issue an
+		// update: the operator does not watch Secrets, so a redundant write on
+		// every reconcile is pure churn we want to avoid.
+		mcli.ClearActions()
+		assert.NoError(service.CreateOrUpdateSecret(secret.Namespace, secret.DeepCopy()))
+
+		for _, action := range mcli.Actions() {
+			assert.NotEqual("update", action.GetVerb(), "identical content must not trigger an update")
+		}
+	})
+}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -19,8 +20,8 @@ import (
 type RedisFailoverClient interface {
 	EnsureSentinelService(rFailover *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference) error
 	EnsureSentinelConfigMap(rFailover *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference) error
-	EnsureSentinelDeployment(rFailover *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference) error
-	EnsureRedisStatefulset(rFailover *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference) error
+	EnsureSentinelDeployment(rFailover *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference, tlsHash string) error
+	EnsureRedisStatefulset(rFailover *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference, tlsHash string) error
 	EnsureRedisService(rFailover *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference) error
 	EnsureRedisMasterService(rFailover *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference) error
 	EnsureRedisSlaveService(rFailover *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference) error
@@ -28,6 +29,8 @@ type RedisFailoverClient interface {
 	EnsureRedisReadinessConfigMap(rFailover *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference) error
 	EnsureRedisConfigMap(rFailover *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference) error
 	EnsureNotPresentRedisService(rFailover *redisfailoverv1.RedisFailover) error
+	EnsureRedisCertificate(rFailover *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference) error
+	EnsureRedisCACertSecret(rFailover *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference) (string, error)
 }
 
 // RedisFailoverKubeClient implements the required methods to talk with kubernetes
@@ -35,14 +38,26 @@ type RedisFailoverKubeClient struct {
 	K8SService    k8s.Services
 	logger        log.Logger
 	metricsClient metrics.Recorder
+	// clusterDomain is the cluster's DNS suffix (e.g. "cluster.local",
+	// "cozy.local") used to template the FQDN SANs on the cert-manager
+	// Certificate. Empty falls back to "cluster.local" so existing
+	// deployments that never set --cluster-domain keep working.
+	clusterDomain string
 }
 
-// NewRedisFailoverKubeClient creates a new RedisFailoverKubeClient
-func NewRedisFailoverKubeClient(k8sService k8s.Services, logger log.Logger, metricsClient metrics.Recorder) *RedisFailoverKubeClient {
+// NewRedisFailoverKubeClient creates a new RedisFailoverKubeClient.
+// clusterDomain controls the *.svc.<domain> SAN entries on the
+// generated cert-manager Certificate; pass an empty string to fall
+// back to the upstream Kubernetes default ("cluster.local").
+func NewRedisFailoverKubeClient(k8sService k8s.Services, logger log.Logger, metricsClient metrics.Recorder, clusterDomain string) *RedisFailoverKubeClient {
+	if clusterDomain == "" {
+		clusterDomain = "cluster.local"
+	}
 	return &RedisFailoverKubeClient{
 		K8SService:    k8sService,
 		logger:        logger,
 		metricsClient: metricsClient,
+		clusterDomain: clusterDomain,
 	}
 }
 
@@ -98,22 +113,24 @@ func (r *RedisFailoverKubeClient) EnsureSentinelConfigMap(rf *redisfailoverv1.Re
 	return err
 }
 
-// EnsureSentinelDeployment makes sure the sentinel deployment exists in the desired state
-func (r *RedisFailoverKubeClient) EnsureSentinelDeployment(rf *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference) error {
+// EnsureSentinelDeployment makes sure the sentinel deployment exists in the desired state.
+// tlsHash is stamped on the pod template so a renewed TLS Secret rolls the pods.
+func (r *RedisFailoverKubeClient) EnsureSentinelDeployment(rf *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference, tlsHash string) error {
 	if !rf.Spec.Sentinel.DisablePodDisruptionBudget {
 		if err := r.ensurePodDisruptionBudget(rf, sentinelName, sentinelRoleName, labels, ownerRefs); err != nil {
 			return err
 		}
 	}
-	d := generateSentinelDeployment(rf, labels, ownerRefs)
+	d := generateSentinelDeployment(rf, labels, ownerRefs, tlsHash)
 	err := r.K8SService.CreateOrUpdateDeployment(rf.Namespace, d)
 
 	r.setEnsureOperationMetrics(d.Namespace, d.Name, "Deployment", rf.Name, err)
 	return err
 }
 
-// EnsureRedisStatefulset makes sure the redis statefulset exists in the desired state
-func (r *RedisFailoverKubeClient) EnsureRedisStatefulset(rf *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference) error {
+// EnsureRedisStatefulset makes sure the redis statefulset exists in the desired state.
+// tlsHash is stamped on the pod template so a renewed TLS Secret rolls the pods.
+func (r *RedisFailoverKubeClient) EnsureRedisStatefulset(rf *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference, tlsHash string) error {
 	if !rf.Spec.Redis.DisablePodDisruptionBudget {
 		if err := r.ensurePodDisruptionBudget(rf, redisName, redisRoleName, labels, ownerRefs); err != nil {
 			return err
@@ -126,7 +143,7 @@ func (r *RedisFailoverKubeClient) EnsureRedisStatefulset(rf *redisfailoverv1.Red
 	}
 
 	// Generate and create/update StatefulSet
-	ss := generateRedisStatefulSet(rf, labels, ownerRefs)
+	ss := generateRedisStatefulSet(rf, labels, ownerRefs, tlsHash)
 	err := r.K8SService.CreateOrUpdateStatefulSet(rf.Namespace, ss)
 
 	r.setEnsureOperationMetrics(ss.Namespace, ss.Name, "StatefulSet", rf.Name, err)
@@ -275,6 +292,68 @@ func (r *RedisFailoverKubeClient) EnsureRedisReadinessConfigMap(rf *redisfailove
 	err := r.K8SService.CreateOrUpdateConfigMap(rf.Namespace, cm)
 	r.setEnsureOperationMetrics(cm.Namespace, cm.Name, "ConfigMap", rf.Name, err)
 	return err
+}
+
+// EnsureRedisCertificate ensures the cert-manager Certificate resource
+// exists when spec.tls.certManager is configured. It is a no-op for any
+// other TLS mode (disabled, or bring-your-own-secret).
+func (r *RedisFailoverKubeClient) EnsureRedisCertificate(rf *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference) error {
+	if !TLSEnabled(rf) || rf.Spec.TLS.CertManager == nil {
+		return nil
+	}
+	cert := generateRedisCertificate(rf, labels, ownerRefs, r.clusterDomain)
+	err := r.K8SService.CreateOrUpdateCertificate(rf.Namespace, cert)
+	r.setEnsureOperationMetrics(cert.Namespace, cert.Name, "Certificate", rf.Name, err)
+	return err
+}
+
+// EnsureRedisCACertSecret publishes an Opaque Secret containing only ca.crt,
+// extracted from the cluster's TLS secret. The CA-only Secret never holds a
+// private key, so RBAC can be scoped to it to let clients verify the Redis
+// server without exposing tls.key. It is a no-op when TLS is disabled and
+// applies to both cert-manager and bring-your-own-secret modes.
+//
+// The source TLS secret is populated asynchronously by cert-manager, or
+// managed externally in bring-your-own mode, so a missing secret or a
+// missing/empty ca.crt is treated as "not ready yet": the method logs and
+// returns nil so the rest of the reconcile proceeds and a later pass
+// republishes the CA certificate once it becomes available.
+//
+// It also returns a content hash of the TLS secret it read, folded together
+// with the effective tls-auth-clients value, for the caller to stamp on the
+// Redis and Sentinel pod templates. This is the only read of
+// that secret in the Ensure phase, so the hash is derived here rather than
+// from a second GET there; the check-and-heal phase reads it again for every
+// Redis or Sentinel client it builds, see tlsConfigFor. The hash is empty
+// whenever there is nothing to pin yet: TLS disabled, secret absent, or no
+// tls.crt in it.
+func (r *RedisFailoverKubeClient) EnsureRedisCACertSecret(rf *redisfailoverv1.RedisFailover, labels map[string]string, ownerRefs []metav1.OwnerReference) (string, error) {
+	if !TLSEnabled(rf) {
+		return "", nil
+	}
+	srcName := GetTLSSecretName(rf)
+	src, err := r.K8SService.GetSecret(rf.Namespace, srcName)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			r.logger.WithField("namespace", rf.Namespace).WithField("secret", srcName).
+				Debugf("TLS secret not present yet; deferring CA cert secret to a later reconcile")
+			return "", nil
+		}
+		return "", err
+	}
+	// Taken before the ca.crt check below, so that a secret carrying a
+	// serving certificate but no CA yet still pins the pods to it.
+	tlsHash := tlsSecretContentHash(rf, src)
+	caPEM := src.Data[tlsSecretCAKey]
+	if len(caPEM) == 0 {
+		r.logger.WithField("namespace", rf.Namespace).WithField("secret", srcName).
+			Debugf("TLS secret has no %q yet; deferring CA cert secret to a later reconcile", tlsSecretCAKey)
+		return tlsHash, nil
+	}
+	secret := generateRedisCACertSecret(rf, labels, ownerRefs, caPEM)
+	err = r.K8SService.CreateOrUpdateSecret(rf.Namespace, secret)
+	r.setEnsureOperationMetrics(secret.Namespace, secret.Name, "Secret", rf.Name, err)
+	return tlsHash, err
 }
 
 // EnsureRedisService makes sure the redis statefulset exists

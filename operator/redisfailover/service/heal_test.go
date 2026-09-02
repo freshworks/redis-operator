@@ -38,7 +38,7 @@ func TestSetOldestAsMasterNewMasterError(t *testing.T) {
 	ms.On("UpdatePodAnnotations", namespace, mock.AnythingOfType("string"), mock.Anything).Return(nil)
 	ms.On("RemovePodAnnotation", namespace, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 	mr := &mRedisService.Client{}
-	mr.On("MakeMaster", "0.0.0.0", "0", "").Once().Return(errors.New(""))
+	mr.On("MakeMaster", "0.0.0.0", "0", "", mock.Anything).Once().Return(errors.New(""))
 
 	healer := rfservice.NewRedisFailoverHealer(ms, mr, log.DummyLogger{})
 
@@ -67,7 +67,7 @@ func TestSetOldestAsMaster(t *testing.T) {
 	ms.On("UpdatePodAnnotations", namespace, mock.AnythingOfType("string"), mock.Anything).Return(nil)
 	ms.On("RemovePodAnnotation", namespace, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 	mr := &mRedisService.Client{}
-	mr.On("MakeMaster", "0.0.0.0", "0", "").Once().Return(nil)
+	mr.On("MakeMaster", "0.0.0.0", "0", "", mock.Anything).Once().Return(nil)
 
 	healer := rfservice.NewRedisFailoverHealer(ms, mr, log.DummyLogger{})
 
@@ -101,8 +101,8 @@ func TestSetOldestAsMasterMultiplePodsMakeSlaveOfError(t *testing.T) {
 	ms.On("UpdatePodAnnotations", namespace, mock.AnythingOfType("string"), mock.Anything).Return(nil)
 	ms.On("RemovePodAnnotation", namespace, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 	mr := &mRedisService.Client{}
-	mr.On("MakeMaster", "0.0.0.0", "0", "").Once().Return(nil)
-	mr.On("MakeSlaveOfWithPort", "1.1.1.1", "0.0.0.0", "0", "").Once().Return(errors.New(""))
+	mr.On("MakeMaster", "0.0.0.0", "0", "", mock.Anything).Once().Return(nil)
+	mr.On("MakeSlaveOfWithPort", "1.1.1.1", "0", "0.0.0.0", "0", "", mock.Anything).Once().Return(errors.New(""))
 
 	healer := rfservice.NewRedisFailoverHealer(ms, mr, log.DummyLogger{})
 
@@ -136,8 +136,8 @@ func TestSetOldestAsMasterMultiplePods(t *testing.T) {
 	ms.On("UpdatePodAnnotations", namespace, mock.AnythingOfType("string"), mock.Anything).Return(nil)
 	ms.On("RemovePodAnnotation", namespace, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 	mr := &mRedisService.Client{}
-	mr.On("MakeMaster", "0.0.0.0", "0", "").Once().Return(nil)
-	mr.On("MakeSlaveOfWithPort", "1.1.1.1", "0.0.0.0", "0", "").Once().Return(nil)
+	mr.On("MakeMaster", "0.0.0.0", "0", "", mock.Anything).Once().Return(nil)
+	mr.On("MakeSlaveOfWithPort", "1.1.1.1", "0", "0.0.0.0", "0", "", mock.Anything).Once().Return(nil)
 
 	healer := rfservice.NewRedisFailoverHealer(ms, mr, log.DummyLogger{})
 
@@ -181,8 +181,8 @@ func TestSetOldestAsMasterOrdering(t *testing.T) {
 	ms.On("UpdatePodAnnotations", namespace, mock.AnythingOfType("string"), mock.Anything).Return(nil)
 	ms.On("RemovePodAnnotation", namespace, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 	mr := &mRedisService.Client{}
-	mr.On("MakeMaster", "1.1.1.1", "0", "").Once().Return(nil)
-	mr.On("MakeSlaveOfWithPort", "0.0.0.0", "1.1.1.1", "0", "").Once().Return(nil)
+	mr.On("MakeMaster", "1.1.1.1", "0", "", mock.Anything).Once().Return(nil)
+	mr.On("MakeSlaveOfWithPort", "0.0.0.0", "0", "1.1.1.1", "0", "", mock.Anything).Once().Return(nil)
 
 	healer := rfservice.NewRedisFailoverHealer(ms, mr, log.DummyLogger{})
 
@@ -216,7 +216,7 @@ func TestSetMasterOnAllMakeMasterError(t *testing.T) {
 	ms.On("UpdatePodAnnotations", namespace, mock.AnythingOfType("string"), mock.Anything).Return(nil)
 	ms.On("RemovePodAnnotation", namespace, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 	mr := &mRedisService.Client{}
-	mr.On("IsMaster", "0.0.0.0", "0", "").Return(false, errors.New(""))
+	mr.On("IsMaster", "0.0.0.0", "0", "", mock.Anything).Return(false, errors.New(""))
 	healer := rfservice.NewRedisFailoverHealer(ms, mr, log.DummyLogger{})
 
 	err := healer.SetMasterOnAll("0.0.0.0", rf)
@@ -249,8 +249,8 @@ func TestSetMasterOnAllMakeSlaveOfError(t *testing.T) {
 	ms.On("UpdatePodAnnotations", namespace, mock.AnythingOfType("string"), mock.Anything).Return(nil)
 	ms.On("RemovePodAnnotation", namespace, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 	mr := &mRedisService.Client{}
-	mr.On("IsMaster", "0.0.0.0", "0", "").Return(true, nil)
-	mr.On("MakeSlaveOfWithPort", "1.1.1.1", "0.0.0.0", "0", "").Once().Return(errors.New(""))
+	mr.On("IsMaster", "0.0.0.0", "0", "", mock.Anything).Return(true, nil)
+	mr.On("MakeSlaveOfWithPort", "1.1.1.1", "0", "0.0.0.0", "0", "", mock.Anything).Once().Return(errors.New(""))
 
 	healer := rfservice.NewRedisFailoverHealer(ms, mr, log.DummyLogger{})
 
@@ -284,8 +284,8 @@ func TestSetMasterOnAll(t *testing.T) {
 	ms.On("UpdatePodAnnotations", namespace, mock.AnythingOfType("string"), mock.Anything).Return(nil)
 	ms.On("RemovePodAnnotation", namespace, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Return(nil)
 	mr := &mRedisService.Client{}
-	mr.On("IsMaster", "0.0.0.0", "0", "").Return(true, nil)
-	mr.On("MakeSlaveOfWithPort", "1.1.1.1", "0.0.0.0", "0", "").Once().Return(nil)
+	mr.On("IsMaster", "0.0.0.0", "0", "", mock.Anything).Return(true, nil)
+	mr.On("MakeSlaveOfWithPort", "1.1.1.1", "0", "0.0.0.0", "0", "", mock.Anything).Once().Return(nil)
 
 	healer := rfservice.NewRedisFailoverHealer(ms, mr, log.DummyLogger{})
 
@@ -343,12 +343,12 @@ func TestSetExternalMasterOnAll(t *testing.T) {
 
 			mr := &mRedisService.Client{}
 			if !expectError {
-				mr.On("MakeSlaveOfWithPort", "0.0.0.0", "5.5.5.5", "6379", "").Once().Return(nil)
+				mr.On("MakeSlaveOfWithPort", "0.0.0.0", "0", "5.5.5.5", "6379", "", mock.Anything).Once().Return(nil)
 				if test.errorOnMakeSlaveOf {
 					expectError = true
-					mr.On("MakeSlaveOfWithPort", "1.1.1.1", "5.5.5.5", "6379", "").Once().Return(errors.New(""))
+					mr.On("MakeSlaveOfWithPort", "1.1.1.1", "0", "5.5.5.5", "6379", "", mock.Anything).Once().Return(errors.New(""))
 				} else {
-					mr.On("MakeSlaveOfWithPort", "1.1.1.1", "5.5.5.5", "6379", "").Once().Return(nil)
+					mr.On("MakeSlaveOfWithPort", "1.1.1.1", "0", "5.5.5.5", "6379", "", mock.Anything).Once().Return(nil)
 				}
 			}
 
@@ -391,9 +391,9 @@ func TestNewSentinelMonitor(t *testing.T) {
 
 			if test.errorOnMonitorRedis {
 				errorExpected = true
-				mr.On("MonitorRedisWithPort", "0.0.0.0", "1.1.1.1", "0", "2", "", "mymaster").Once().Return(errors.New(""))
+				mr.On("MonitorRedisWithPort", "0.0.0.0", "1.1.1.1", "0", "2", "", "mymaster", mock.Anything).Once().Return(errors.New(""))
 			} else {
-				mr.On("MonitorRedisWithPort", "0.0.0.0", "1.1.1.1", "0", "2", "", "mymaster").Once().Return(nil)
+				mr.On("MonitorRedisWithPort", "0.0.0.0", "1.1.1.1", "0", "2", "", "mymaster", mock.Anything).Once().Return(nil)
 			}
 
 			healer := rfservice.NewRedisFailoverHealer(ms, mr, log.DummyLogger{})
@@ -435,9 +435,9 @@ func TestNewSentinelMonitorWithPort(t *testing.T) {
 
 			if test.errorOnMonitorRedis {
 				errorExpected = true
-				mr.On("MonitorRedisWithPort", "0.0.0.0", "1.1.1.1", "6379", "2", "", "mymaster").Once().Return(errors.New(""))
+				mr.On("MonitorRedisWithPort", "0.0.0.0", "1.1.1.1", "6379", "2", "", "mymaster", mock.Anything).Once().Return(errors.New(""))
 			} else {
-				mr.On("MonitorRedisWithPort", "0.0.0.0", "1.1.1.1", "6379", "2", "", "mymaster").Once().Return(nil)
+				mr.On("MonitorRedisWithPort", "0.0.0.0", "1.1.1.1", "6379", "2", "", "mymaster", mock.Anything).Once().Return(nil)
 			}
 
 			healer := rfservice.NewRedisFailoverHealer(ms, mr, log.DummyLogger{})

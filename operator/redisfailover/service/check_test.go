@@ -210,7 +210,7 @@ func TestCheckAllSlavesFromMasterGetSlaveOfError(t *testing.T) {
 	ms.On("UpdatePodAnnotations", namespace, mock.AnythingOfType("string"), mock.Anything).Once().Return(nil)
 	ms.On("RemovePodAnnotation", namespace, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Once().Return(nil)
 	mr := &mRedisService.Client{}
-	mr.On("GetSlaveOf", "", "0", "").Once().Return("", errors.New(""))
+	mr.On("GetSlaveOf", "", "0", "", mock.Anything).Once().Return("", errors.New(""))
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
@@ -240,7 +240,7 @@ func TestCheckAllSlavesFromMasterDifferentMaster(t *testing.T) {
 	ms.On("UpdatePodAnnotations", namespace, mock.AnythingOfType("string"), mock.Anything).Once().Return(nil)
 	ms.On("RemovePodAnnotation", namespace, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Once().Return(nil)
 	mr := &mRedisService.Client{}
-	mr.On("GetSlaveOf", "0.0.0.0", "0", "").Once().Return("1.1.1.1", nil)
+	mr.On("GetSlaveOf", "0.0.0.0", "0", "", mock.Anything).Once().Return("1.1.1.1", nil)
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
@@ -270,7 +270,7 @@ func TestCheckAllSlavesFromMaster(t *testing.T) {
 	ms.On("UpdatePodAnnotations", namespace, mock.AnythingOfType("string"), mock.Anything).Once().Return(nil)
 	ms.On("RemovePodAnnotation", namespace, mock.AnythingOfType("string"), mock.AnythingOfType("string")).Once().Return(nil)
 	mr := &mRedisService.Client{}
-	mr.On("GetSlaveOf", "0.0.0.0", "0", "").Once().Return("1.1.1.1", nil)
+	mr.On("GetSlaveOf", "0.0.0.0", "0", "", mock.Anything).Once().Return("1.1.1.1", nil)
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
@@ -285,7 +285,7 @@ func TestCheckSentinelNumberInMemoryGetDeploymentPodsError(t *testing.T) {
 
 	ms := &mK8SService.Services{}
 	mr := &mRedisService.Client{}
-	mr.On("GetNumberSentinelsInMemory", "1.1.1.1").Once().Return(int32(0), errors.New("expected error"))
+	mr.On("GetNumberSentinelsInMemory", "1.1.1.1", mock.Anything).Once().Return(int32(0), errors.New("expected error"))
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
@@ -300,7 +300,7 @@ func TestCheckSentinelNumberInMemoryGetNumberSentinelInMemoryError(t *testing.T)
 
 	ms := &mK8SService.Services{}
 	mr := &mRedisService.Client{}
-	mr.On("GetNumberSentinelsInMemory", "1.1.1.1").Once().Return(int32(0), errors.New(""))
+	mr.On("GetNumberSentinelsInMemory", "1.1.1.1", mock.Anything).Once().Return(int32(0), errors.New(""))
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
@@ -315,7 +315,7 @@ func TestCheckSentinelNumberInMemoryNumberMismatch(t *testing.T) {
 
 	ms := &mK8SService.Services{}
 	mr := &mRedisService.Client{}
-	mr.On("GetNumberSentinelsInMemory", "1.1.1.1").Once().Return(int32(4), nil)
+	mr.On("GetNumberSentinelsInMemory", "1.1.1.1", mock.Anything).Once().Return(int32(4), nil)
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
@@ -330,7 +330,7 @@ func TestCheckSentinelNumberInMemory(t *testing.T) {
 
 	ms := &mK8SService.Services{}
 	mr := &mRedisService.Client{}
-	mr.On("GetNumberSentinelsInMemory", "1.1.1.1").Once().Return(int32(3), nil)
+	mr.On("GetNumberSentinelsInMemory", "1.1.1.1", mock.Anything).Once().Return(int32(3), nil)
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
@@ -345,7 +345,7 @@ func TestCheckSentinelSlavesNumberInMemoryGetNumberSentinelSlavesInMemoryError(t
 
 	ms := &mK8SService.Services{}
 	mr := &mRedisService.Client{}
-	mr.On("GetNumberSentinelSlavesInMemory", "1.1.1.1").Once().Return(int32(0), errors.New(""))
+	mr.On("GetNumberSentinelSlavesInMemory", "1.1.1.1", mock.Anything).Once().Return(int32(0), errors.New(""))
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
@@ -360,7 +360,7 @@ func TestCheckSentinelSlavesNumberInMemoryReplicasMismatch(t *testing.T) {
 
 	ms := &mK8SService.Services{}
 	mr := &mRedisService.Client{}
-	mr.On("GetNumberSentinelSlavesInMemory", "1.1.1.1").Once().Return(int32(3), nil)
+	mr.On("GetNumberSentinelSlavesInMemory", "1.1.1.1", mock.Anything).Once().Return(int32(3), nil)
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
@@ -376,7 +376,7 @@ func TestCheckSentinelSlavesNumberInMemory(t *testing.T) {
 
 	ms := &mK8SService.Services{}
 	mr := &mRedisService.Client{}
-	mr.On("GetNumberSentinelSlavesInMemory", "1.1.1.1").Once().Return(int32(4), nil)
+	mr.On("GetNumberSentinelSlavesInMemory", "1.1.1.1", mock.Anything).Once().Return(int32(4), nil)
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
@@ -389,11 +389,11 @@ func TestCheckSentinelMonitorGetSentinelMonitorError(t *testing.T) {
 
 	ms := &mK8SService.Services{}
 	mr := &mRedisService.Client{}
-	mr.On("GetSentinelMonitor", "0.0.0.0", "mymaster").Once().Return("", "", errors.New(""))
+	mr.On("GetSentinelMonitor", "0.0.0.0", "mymaster", mock.Anything).Once().Return("", "", errors.New(""))
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
-	err := checker.CheckSentinelMonitor("0.0.0.0", "mymaster", "1.1.1.1")
+	err := checker.CheckSentinelMonitor(generateRF(), "0.0.0.0", "1.1.1.1")
 	assert.Error(err)
 }
 
@@ -402,11 +402,11 @@ func TestCheckSentinelMonitorMismatch(t *testing.T) {
 
 	ms := &mK8SService.Services{}
 	mr := &mRedisService.Client{}
-	mr.On("GetSentinelMonitor", "0.0.0.0", "mymaster").Once().Return("2.2.2.2", "6379", nil)
+	mr.On("GetSentinelMonitor", "0.0.0.0", "mymaster", mock.Anything).Once().Return("2.2.2.2", "6379", nil)
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
-	err := checker.CheckSentinelMonitor("0.0.0.0", "mymaster", "1.1.1.1")
+	err := checker.CheckSentinelMonitor(generateRF(), "0.0.0.0", "1.1.1.1")
 	assert.Error(err)
 }
 
@@ -415,11 +415,11 @@ func TestCheckSentinelMonitor(t *testing.T) {
 
 	ms := &mK8SService.Services{}
 	mr := &mRedisService.Client{}
-	mr.On("GetSentinelMonitor", "0.0.0.0", "mymaster").Once().Return("1.1.1.1", "6379", nil)
+	mr.On("GetSentinelMonitor", "0.0.0.0", "mymaster", mock.Anything).Once().Return("1.1.1.1", "6379", nil)
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
-	err := checker.CheckSentinelMonitor("0.0.0.0", "mymaster", "1.1.1.1")
+	err := checker.CheckSentinelMonitor(generateRF(), "0.0.0.0", "1.1.1.1")
 	assert.NoError(err)
 }
 
@@ -428,11 +428,11 @@ func TestCheckSentinelMonitorWithPort(t *testing.T) {
 
 	ms := &mK8SService.Services{}
 	mr := &mRedisService.Client{}
-	mr.On("GetSentinelMonitor", "0.0.0.0", "mymaster").Once().Return("1.1.1.1", "6379", nil)
+	mr.On("GetSentinelMonitor", "0.0.0.0", "mymaster", mock.Anything).Once().Return("1.1.1.1", "6379", nil)
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
-	err := checker.CheckSentinelMonitor("0.0.0.0", "mymaster", "1.1.1.1", "6379")
+	err := checker.CheckSentinelMonitor(generateRF(), "0.0.0.0", "1.1.1.1", "6379")
 	assert.NoError(err)
 }
 
@@ -441,11 +441,11 @@ func TestCheckSentinelMonitorWithPortMismatch(t *testing.T) {
 
 	ms := &mK8SService.Services{}
 	mr := &mRedisService.Client{}
-	mr.On("GetSentinelMonitor", "0.0.0.0", "mymaster").Once().Return("1.1.1.1", "6379", nil)
+	mr.On("GetSentinelMonitor", "0.0.0.0", "mymaster", mock.Anything).Once().Return("1.1.1.1", "6379", nil)
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
-	err := checker.CheckSentinelMonitor("0.0.0.0", "mymaster", "0.0.0.0", "6379")
+	err := checker.CheckSentinelMonitor(generateRF(), "0.0.0.0", "0.0.0.0", "6379")
 	assert.Error(err)
 }
 
@@ -454,11 +454,11 @@ func TestCheckSentinelMonitorWithPortIPMismatch(t *testing.T) {
 
 	ms := &mK8SService.Services{}
 	mr := &mRedisService.Client{}
-	mr.On("GetSentinelMonitor", "0.0.0.0", "mymaster").Once().Return("1.1.1.1", "6379", nil)
+	mr.On("GetSentinelMonitor", "0.0.0.0", "mymaster", mock.Anything).Once().Return("1.1.1.1", "6379", nil)
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
-	err := checker.CheckSentinelMonitor("0.0.0.0", "mymaster", "1.1.1.1", "6380")
+	err := checker.CheckSentinelMonitor(generateRF(), "0.0.0.0", "1.1.1.1", "6380")
 	assert.Error(err)
 }
 
@@ -496,7 +496,7 @@ func TestGetMasterIPIsMasterError(t *testing.T) {
 	ms := &mK8SService.Services{}
 	ms.On("GetStatefulSetPods", namespace, rfservice.GetRedisName(rf)).Once().Return(pods, nil)
 	mr := &mRedisService.Client{}
-	mr.On("IsMaster", "0.0.0.0", "0", "").Once().Return(false, errors.New(""))
+	mr.On("IsMaster", "0.0.0.0", "0", "", mock.Anything).Once().Return(false, errors.New(""))
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
@@ -529,8 +529,8 @@ func TestGetMasterIPMultipleMastersError(t *testing.T) {
 	ms := &mK8SService.Services{}
 	ms.On("GetStatefulSetPods", namespace, rfservice.GetRedisName(rf)).Once().Return(pods, nil)
 	mr := &mRedisService.Client{}
-	mr.On("IsMaster", "0.0.0.0", "0", "").Once().Return(true, nil)
-	mr.On("IsMaster", "1.1.1.1", "0", "").Once().Return(true, nil)
+	mr.On("IsMaster", "0.0.0.0", "0", "", mock.Anything).Once().Return(true, nil)
+	mr.On("IsMaster", "1.1.1.1", "0", "", mock.Anything).Once().Return(true, nil)
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
@@ -563,8 +563,8 @@ func TestGetMasterIP(t *testing.T) {
 	ms := &mK8SService.Services{}
 	ms.On("GetStatefulSetPods", namespace, rfservice.GetRedisName(rf)).Once().Return(pods, nil)
 	mr := &mRedisService.Client{}
-	mr.On("IsMaster", "0.0.0.0", "0", "").Once().Return(true, nil)
-	mr.On("IsMaster", "1.1.1.1", "0", "").Once().Return(false, nil)
+	mr.On("IsMaster", "0.0.0.0", "0", "", mock.Anything).Once().Return(true, nil)
+	mr.On("IsMaster", "1.1.1.1", "0", "", mock.Anything).Once().Return(false, nil)
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
@@ -607,7 +607,7 @@ func TestGetNumberMastersIsMasterError(t *testing.T) {
 	ms := &mK8SService.Services{}
 	ms.On("GetStatefulSetPods", namespace, rfservice.GetRedisName(rf)).Once().Return(pods, nil)
 	mr := &mRedisService.Client{}
-	mr.On("IsMaster", "0.0.0.0", "0", "").Once().Return(true, errors.New(""))
+	mr.On("IsMaster", "0.0.0.0", "0", "", mock.Anything).Once().Return(true, errors.New(""))
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
@@ -640,8 +640,8 @@ func TestGetNumberMasters(t *testing.T) {
 	ms := &mK8SService.Services{}
 	ms.On("GetStatefulSetPods", namespace, rfservice.GetRedisName(rf)).Once().Return(pods, nil)
 	mr := &mRedisService.Client{}
-	mr.On("IsMaster", "0.0.0.0", "0", "").Once().Return(true, nil)
-	mr.On("IsMaster", "1.1.1.1", "0", "").Once().Return(false, nil)
+	mr.On("IsMaster", "0.0.0.0", "0", "", mock.Anything).Once().Return(true, nil)
+	mr.On("IsMaster", "1.1.1.1", "0", "", mock.Anything).Once().Return(false, nil)
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
@@ -675,8 +675,8 @@ func TestGetNumberMastersTwo(t *testing.T) {
 	ms := &mK8SService.Services{}
 	ms.On("GetStatefulSetPods", namespace, rfservice.GetRedisName(rf)).Once().Return(pods, nil)
 	mr := &mRedisService.Client{}
-	mr.On("IsMaster", "0.0.0.0", "0", "").Once().Return(true, nil)
-	mr.On("IsMaster", "1.1.1.1", "0", "").Once().Return(true, nil)
+	mr.On("IsMaster", "0.0.0.0", "0", "", mock.Anything).Once().Return(true, nil)
+	mr.On("IsMaster", "1.1.1.1", "0", "", mock.Anything).Once().Return(true, nil)
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 
@@ -780,8 +780,8 @@ func TestGetRedisPodsNames(t *testing.T) {
 	ms := &mK8SService.Services{}
 	ms.On("GetStatefulSetPods", namespace, rfservice.GetRedisName(rf)).Once().Return(pods, nil)
 	mr := &mRedisService.Client{}
-	mr.On("IsMaster", "0.0.0.0", "0", "").Twice().Return(false, nil)
-	mr.On("IsMaster", "1.1.1.1", "0", "").Once().Return(true, nil)
+	mr.On("IsMaster", "0.0.0.0", "0", "", mock.Anything).Twice().Return(false, nil)
+	mr.On("IsMaster", "1.1.1.1", "0", "", mock.Anything).Once().Return(true, nil)
 
 	checker := rfservice.NewRedisFailoverChecker(ms, mr, log.DummyLogger{}, metrics.Dummy)
 	master, err := checker.GetRedisesMasterPod(rf)
@@ -791,8 +791,8 @@ func TestGetRedisPodsNames(t *testing.T) {
 	assert.Equal(master, "master")
 
 	ms.On("GetStatefulSetPods", namespace, rfservice.GetRedisName(rf)).Once().Return(pods, nil)
-	mr.On("IsMaster", "0.0.0.0", "0", "").Twice().Return(false, nil)
-	mr.On("IsMaster", "1.1.1.1", "0", "").Once().Return(true, nil)
+	mr.On("IsMaster", "0.0.0.0", "0", "", mock.Anything).Twice().Return(false, nil)
+	mr.On("IsMaster", "1.1.1.1", "0", "", mock.Anything).Once().Return(true, nil)
 
 	namePods, err := checker.GetRedisesSlavesPods(rf)
 

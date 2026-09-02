@@ -47,7 +47,7 @@ func TestRedisFailoverValkeyDatabaseEngine(t *testing.T) {
 		Development: true,
 	}
 
-	k8sClient, customClient, aeClientset, err := utils.CreateKubernetesClients(flags)
+	k8sClient, customClient, aeClientset, cmClient, err := utils.CreateKubernetesClients(flags)
 	require.NoError(err)
 
 	redisClient := redis.New(metrics.Dummy)
@@ -59,7 +59,7 @@ func TestRedisFailoverValkeyDatabaseEngine(t *testing.T) {
 		redisClient: redisClient,
 	}
 
-	k8sservice := k8s.New(k8sClient, customClient, aeClientset, log.Dummy, metrics.Dummy)
+	k8sservice := k8s.New(k8sClient, customClient, aeClientset, cmClient, log.Dummy, metrics.Dummy)
 
 	prepErr := clients.prepareNS(currentNamespace)
 	require.NoError(prepErr)

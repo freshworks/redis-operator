@@ -9,6 +9,10 @@ const (
 	defaultValkeyImage              = "valkey/valkey:7.2.11-alpine"
 	defaultRedisPort                = 6379
 	defaultReservedPodMemoryPercent = 10
+
+	defaultTLSAuthClients   = TLSAuthClientsNo
+	defaultCertManagerGroup = "cert-manager.io"
+	defaultCertManagerKind  = "Issuer"
 )
 
 var (

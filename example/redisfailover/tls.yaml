@@ -1,0 +1,58 @@
+# RedisFailover with TLS provisioned by cert-manager.
+#
+# Prerequisite: an Issuer (or ClusterIssuer) reachable from the namespace
+# where the RedisFailover lives. The operator creates a Certificate
+# referencing this Issuer; cert-manager populates the Secret with
+# tls.crt / tls.key / ca.crt and the operator mounts that Secret into
+# every Redis and Sentinel pod.
+#
+# Bring-your-own-Secret mode is also supported — remove the certManager
+# block and set spec.tls.certificateSecret.secretName to an existing
+# Secret you manage outside the operator.
+apiVersion: databases.spotahome.com/v1
+kind: RedisFailover
+metadata:
+  name: redisfailover-tls
+spec:
+  sentinel:
+    replicas: 3
+    resources:
+      requests:
+        cpu: 100m
+      limits:
+        memory: 100Mi
+  redis:
+    replicas: 3
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
+      limits:
+        cpu: 400m
+        memory: 500Mi
+  tls:
+    enabled: true
+    # tls-auth-clients in the resulting redis.conf.
+    # "no" (default) accepts any TLS client; switch to "yes" to require
+    # client certificates signed by the same CA.
+    authClients: "no"
+    certManager:
+      issuerRef:
+        name: my-ca-issuer
+        kind: ClusterIssuer
+        group: cert-manager.io
+      # Optional overrides — cert-manager defaults apply when omitted.
+      # duration: 720h         # 30 days
+      # renewBefore: 240h      # 10 days
+      # privateKey:
+      #   algorithm: ECDSA
+      #   size: 256
+      # Extra Subject Alternative Names appended to the default service
+      # and per-pod SANs the operator computes. Entries that parse as
+      # an IPv4 or IPv6 address are added as IP SANs; everything else
+      # is added as a DNS SAN. Typical uses: an external LoadBalancer
+      # hostname or VIP that clients outside the cluster connect to.
+      # extraSANs:
+      #   - redis.example.com
+      #   - 10.0.0.50
+      #   - 2001:db8::1
