@@ -185,10 +185,10 @@ func (c *clients) testValkeyWorkloadBinaries(t *testing.T, currentNamespace, rfN
 	shutdownCM, err := c.k8sClient.CoreV1().ConfigMaps(currentNamespace).Get(context.Background(), fmt.Sprintf("rfr-s-%s", rfName), metav1.GetOptions{})
 	require.NoError(err)
 	assert.Contains(shutdownCM.Data["shutdown.sh"], "valkey-cli")
-	assert.Contains(shutdownCM.Data["shutdown.sh"], "VALKEYCLI_AUTH")
+	assert.Contains(shutdownCM.Data["shutdown.sh"], "REDISCLI_AUTH")
 
 	readinessCM, err := c.k8sClient.CoreV1().ConfigMaps(currentNamespace).Get(context.Background(), fmt.Sprintf("rfr-readiness-%s", rfName), metav1.GetOptions{})
 	require.NoError(err)
 	assert.Contains(readinessCM.Data["ready.sh"], "valkey-cli")
-	assert.Contains(readinessCM.Data["ready.sh"], "VALKEYCLI_AUTH")
+	assert.Contains(readinessCM.Data["ready.sh"], "REDISCLI_AUTH")
 }

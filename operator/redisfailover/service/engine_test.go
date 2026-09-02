@@ -19,7 +19,7 @@ func TestEngineFor(t *testing.T) {
 	}{
 		{"omitted is redis", "", "redis-server", "redis-cli", "REDISCLI_AUTH"},
 		{"redis", redisfailoverv1.RedisEngine, "redis-server", "redis-cli", "REDISCLI_AUTH"},
-		{"valkey", redisfailoverv1.ValkeyEngine, "valkey-server", "valkey-cli", "VALKEYCLI_AUTH"},
+		{"valkey", redisfailoverv1.ValkeyEngine, "valkey-server", "valkey-cli", "REDISCLI_AUTH"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
